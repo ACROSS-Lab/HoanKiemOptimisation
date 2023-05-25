@@ -162,7 +162,8 @@ async def main():
     MY_SERVER_URL = "localhost"
     MY_SERVER_PORT = 6868
 
-    GAML_FILE_PATH_ON_SERVER = r"c:\\Stuff\\CODE\gama ml project\\HoanKiemOptimisation\\greedy exploration\\greedy model\\models\\model.gaml" #Path(__file__).parents[0] / "greedy model" / "models" / "model.gaml"
+    GAML_FILE_PATH_ON_SERVER = str(Path(__file__).parents[0] / "greedy model" / "models" / "model.gaml").replace('\\','/') 
+    
     EXPERIMENT_NAME = "exp"
 
     # Initial parameter
