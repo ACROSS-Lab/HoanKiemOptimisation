@@ -1,6 +1,6 @@
 import asyncio
 import json
-from typing import Dict
+from typing import Dict, List
 from asyncio import Future
 
 import math
@@ -8,6 +8,11 @@ from numpy import argmax
 import random
 
 from pathlib import Path
+import igraph as ig
+import matplotlib.pyplot as plt
+import math
+from numpy import argmax
+import random
 
 from gama_client.base_client import GamaBaseClient
 from gama_client.command_types import CommandTypes
@@ -88,20 +93,69 @@ async def kill_GAMA_simulation(client, experiment_id):
         print("Unable to stop the experiment", gama_response)
         return
 
+
+count = -1 #to start at 0
+
+
+def get_id() -> int:
+    global count
+    count += 1
+    return count
+
+
 class Node:
-    def __init__(self, closed_roads, parent = None):
-        self.state = closed_roads
-        self.visits = 0
-        self.total_score = 0
-        self.children = []
-        self.parent = parent
+    def __init__(self, closed_roads: List[int], parent=None):
+        self.state: List[int] = closed_roads
+        self.visits: int = 0
+        self.total_score: float = 0
+        self.children: List[Node] = []
+        self.parent: Node = parent
+        self.id: int = get_id()
+
+    def get_root(self) -> ig.Graph:
+        if self.parent:
+            return self.parent.get_root()
+        return ig.Graph(directed=True)
+
+    def to_graph(self, current_graph: ig.Graph) -> ig.Vertex:
+        root = self.get_root() if current_graph is None else current_graph
+        v = root.add_vertex(self.id)
+        v["state"]  = self.state
+        v["id"]     = self.id
+        for c in self.children:
+            child_vertex = c.to_graph(root)
+            root.add_edge(v.index, child_vertex.index)
+        return v
+
+
+def refresh_plot(root: Node, current_node: Node, ax, save_to_file: bool, cycle_number: int):
+    graph = root.to_graph(None).graph
+    plt.cla()
+    ig.plot(
+        graph,
+        target=ax,
+        layout="kk",
+        vertex_size=0.5,
+        vertex_color=["green" if g_id == root.id else "red" if g_id == current_node.id else "steelblue" for g_id in
+                      graph.vs["id"]],
+        vertex_frame_width=4.0,
+        vertex_frame_color="white",
+        vertex_label=[str(v_st[-1]) for v_st in graph.vs["state"]],
+        vertex_label_size=10.0,
+    )
+    plt.pause(0.1)
+    if save_to_file:
+        plt.savefig("exploration/step" + str(cycle_number) + ".png")
+
 
 async def mcts(client, experiment_id, initial_closed_roads, num_iterations):
     root = Node(initial_closed_roads)
 
     best_max_aqi = float('-inf')
 
-    for _ in range(num_iterations):
+    fig, ax = plt.subplots() #initialise a screen to plot the tree
+
+    for i in range(num_iterations):
 
         node = root
 
@@ -122,6 +176,8 @@ async def mcts(client, experiment_id, initial_closed_roads, num_iterations):
 
         # Backpropagation
         backpropagate(node, simulation_aqi_result)
+
+        refresh_plot(root, node, ax, True, i)
 
         # Stop condition: If the maximum AQI of the best child is > 100
         if best_max_aqi > 100:
@@ -161,7 +217,6 @@ async def simulate(client : GamaBaseClient, experiment_id, closed_roads):
     parameters = await apply_new_closed_roads(closed_roads, one_adj)
     # Load the GAMA model with the new parameters
     await client.reload(experiment_id, parameters)
-    closed_roads = parameters[0]["value"]
     await run_GAMA_simulation(client, experiment_id)
     return await get_max_aqi(client, experiment_id)
 
@@ -190,7 +245,7 @@ async def main():
 
     # Connect to the GAMA server
     client = GamaBaseClient(MY_SERVER_URL, MY_SERVER_PORT, message_handler)
-    await client.connect(ping_interval = None)
+    await client.connect(ping_interval=None)
 
     # Load the model
     print("initialize a gaml model")
