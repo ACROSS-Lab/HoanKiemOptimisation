@@ -3,6 +3,7 @@ import json
 from typing import Dict
 from asyncio import Future
 from pathlib import Path
+import time
 
 from gama_client.base_client import GamaBaseClient
 from gama_client.command_types import CommandTypes
@@ -78,7 +79,7 @@ async def GAMA_sim(client, experiment_id):
     print("Running the experiment")
      # Run the GAMA simulation for n + 2 steps
     step_future = asyncio.get_running_loop().create_future()
-    await client.step(experiment_id, 120 + 2, True)
+    await client.step(experiment_id, 11520 + 2, True)
     gama_response = await step_future
     if gama_response["type"] != MessageTypes.CommandExecutedSuccessfully.value:
         print("Unable to execute the experiment", gama_response)
@@ -188,10 +189,18 @@ async def main():
         print("error while initializing", gama_response, e)
         return
 
+    # Start the timer
+    start_time = time.time()
+
     # Run the tree exploration algorithm to find the child node with the lowest max_aqi value
     await tree_exploration(client, experiment_id, root_node)
 
     await kill_GAMA_simulation(client, experiment_id)
+
+    # End the timer
+    end_time = time.time()
+    total_time = end_time - start_time
+    print("Total time:", total_time, "seconds")
 
 
 if __name__ == "__main__":

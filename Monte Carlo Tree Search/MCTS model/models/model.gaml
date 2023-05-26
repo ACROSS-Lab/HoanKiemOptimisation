@@ -221,18 +221,18 @@ global
 			"max_aqi: " 		+ 	max_aqi					+ "; " + 
 			"mean_aqi: " 		+  	mean_aqi 
 		) 
-		to: "/results/save_data.txt" format: text rewrite: false;
+		to: "/results/MCTSdata.txt" format: text rewrite: false;
 		
-		save [closed_roads, cycle, max_aqi, mean_aqi] to: "/results/strippedresults.csv" format: "csv" rewrite: false header: true  ;
+		save [closed_roads, cycle, max_aqi, mean_aqi] to: "/results/MCTSdata.csv" format: "csv" rewrite: false header: true  ;
 	} 
 	
 	reflex benchmark when: benchmark and every(4 #cycle) {
 		float start <- machine_time;
 		write "MAX AQI: " + max_aqi;
-		write "MEAN AQI: " + mean_aqi;
+//		write "MEAN AQI: " + mean_aqi;
 		
-		time_per_4cycles <- machine_time - start;
-		write "time per 4cycles: " + time_per_4cycles;
+//		time_per_4cycles <- machine_time - start;
+//		write "time per 4cycles: " + time_per_4cycles;
 //		write "MIN AQI: " + min_aqi;
 		
 //		list<vehicle> vehicles_in_cell <- vehicle inside self;
@@ -247,10 +247,14 @@ global
 
 
 experiment exp autorun: false{
-	parameter "Number of motorbikes" var: n_motorbikes <- 5 min: 0 max: 1000;
-	parameter "Number of cars" var: n_cars <- 5 min: 0 max: 500;
+	parameter "Number of motorbikes" var: n_motorbikes <- 200 min: 0 max: 1000;
+	parameter "Number of cars" var: n_cars <- 5 min: 75 max: 500;
 	parameter "Refreshing time plot" var: refreshing_rate_plot init: 1#mn min:1#mn max: 1#h;
 	parameter "Closed roads" var: closed_roads <- [1,2,3,4,5];
+	
+	reflex save_simulation when: ( time > 0 ) {	
+		write "Save of simulation : " + save_simulation('/results/MCTSsim.gsim');				
+	}
 	
 	output{
 		display my_display autosave: true type: opengl background: #black{

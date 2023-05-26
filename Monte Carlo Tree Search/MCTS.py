@@ -1,22 +1,12 @@
-"""
-Selection: Select a child node based on the UCT formula, which balances exploration and exploitation.
-Expansion: If the selected node has unexplored children, expand the node by creating new child nodes.
-Simulation: Simulate and return max_aqi
-Backpropagation: Updates visits and total score of the nodes in the path from the selected node to the root.
-Stop condition: If the maximum AQI of the best child node exceeds 100, the algorithm stops.
-
-Fine-tunning Parameters:
-1. Exploration Constant: Higher values = more exploration, lower values = more exploitation (of known promising paths)
-2. No Interations: more = more exploration and quality of the solution
-3. Simulation Policy: 
-4. Tree expansion strat
-
-"""
-
 import asyncio
 import json
 from typing import Dict
 from asyncio import Future
+
+import math
+from numpy import argmax
+import random
+
 from pathlib import Path
 
 from gama_client.base_client import GamaBaseClient
@@ -80,7 +70,7 @@ async def run_GAMA_simulation(client, experiment_id):
     print("Running the experiment")
      # Run the GAMA simulation for n + 2 steps
     step_future = asyncio.get_running_loop().create_future()
-    await client.step(experiment_id, 20 + 2, True)
+    await client.step(experiment_id, 11520 + 2, True)
     gama_response = await step_future
     if gama_response["type"] != MessageTypes.CommandExecutedSuccessfully.value:
         print("Unable to execute the experiment", gama_response)
@@ -97,10 +87,6 @@ async def kill_GAMA_simulation(client, experiment_id):
     if gama_response["type"] != MessageTypes.CommandExecutedSuccessfully.value:
         print("Unable to stop the experiment", gama_response)
         return
-
-import math
-from numpy import argmax
-import random
 
 class Node:
     def __init__(self, closed_roads, parent = None):
@@ -143,6 +129,7 @@ async def mcts(client, experiment_id, initial_closed_roads, num_iterations):
 
     best_child = select_best_child(root)
     return best_child, best_max_aqi
+
 
 def select_child(node):
     exploration_constant = 1.4
@@ -187,6 +174,7 @@ def backpropagate(node, result):
 def select_best_child(node):
     return max(node.children, key=lambda c: c.visits)
 
+
 async def main():
     global experiment_future
 
@@ -197,8 +185,7 @@ async def main():
     EXPERIMENT_NAME = "exp"
 
     # Initial parameter
-    initial_closed_roads = [2]
-    #initial_closed_roads = [10, 11, 82, 132, 133, 158, 201, 202, 203, 271, 274, 276, 277, 279, 292, 302, 303, 304, 305, 306, 307, 308, 309, 310, 311, 344, 425, 426, 427, 428, 540, 583, 585, 640]
+    initial_closed_roads = [10, 11, 82, 132, 133, 158, 201, 202, 203, 271, 274, 276, 277, 279, 292, 302, 303, 304, 305, 306, 307, 308, 309, 310, 311, 344, 425, 426, 427, 428, 540, 583, 585, 640]
     MY_EXP_INIT_PARAMETERS = [{"type": "list<int>", "name": "Closed roads", "value": initial_closed_roads}]
 
     # Connect to the GAMA server
@@ -219,9 +206,9 @@ async def main():
         return
 
     # Run the tree exploration algorithm to find the child node with the lowest max_aqi value
-    num_iterations = 100
+    num_iterations = 643
     best_child, best_max_aqi = await mcts(client, experiment_id, initial_closed_roads, num_iterations)
-    print("Best set of closed roads:", best_child)
+    print("Best set of closed roads:", best_child.state)
     print("Maximum AQI:", best_max_aqi)
 
     await kill_GAMA_simulation(client, experiment_id)
