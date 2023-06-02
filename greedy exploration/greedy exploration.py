@@ -1,9 +1,12 @@
 import asyncio
 import json
-from typing import Dict
+from datetime import datetime
+from typing import Dict, List
 from asyncio import Future
-from pathlib import Path
 import time
+from pathlib import Path
+import igraph as ig
+import matplotlib.pyplot as plt
 
 from gama_client.base_client import GamaBaseClient
 from gama_client.command_types import CommandTypes
@@ -98,12 +101,67 @@ async def kill_GAMA_simulation(client, experiment_id):
         return
 
 
-async def child_node(client: GamaBaseClient, experiment_id, current_node, adjacent_roads):
+
+count = -1 #to start at 0
+
+
+def get_id() -> int:
+    global count
+    count += 1
+    return count
+
+
+class Node:
+    def __init__(self, closed_roads: List[int], parent=None):
+        self.state: List[int] = closed_roads
+        self.children: List[Node] = []
+        self.parent: Node = parent
+        self.aqi: int = 0
+        self.id: int = get_id()
+
+    def get_root(self) -> ig.Graph:
+        if self.parent:
+            return self.parent.get_root()
+        return ig.Graph(directed=True)
+
+    def to_graph(self, current_graph: ig.Graph) -> ig.Vertex:
+        root = self.get_root() if current_graph is None else current_graph
+        v = root.add_vertex(self.id)
+        v["state"]  = self.state
+        v["id"]     = self.id
+        for c in self.children:
+            child_vertex = c.to_graph(root)
+            root.add_edge(v.index, child_vertex.index)
+        return v
+
+
+def refresh_plot(root: Node, current_node: Node, ax, save_to_file: bool):
+    graph = root.to_graph(None).graph
+    plt.cla()
+    ig.plot(
+        graph,
+        target=ax,
+        layout="kk",
+        vertex_size=0.5,
+        vertex_color=["green" if g_id == root.id else "red" if g_id == current_node.id else "steelblue" for g_id in
+                      graph.vs["id"]],
+        vertex_frame_width=4.0,
+        vertex_frame_color="white",
+        vertex_label=[str(v_st[-1]) for v_st in graph.vs["state"]],
+        vertex_label_size=10.0,
+    )
+    plt.pause(0.1)
+    if save_to_file:
+        plt.savefig("exploration/" + str(datetime.now().strftime("%Y-%m-%d %Hh%M %Ssec")) + ".png")
+
+
+async def child_node(client: GamaBaseClient, experiment_id, current_node: Node, adjacent_roads):
     global expression_future, step_future, stop_future
 
-    # Update the inital parameters(current_node) to a new parameters (new_params) by merging it with the list of adjacent
-    breakpoint()
-    new_params = [{"type": "list<int>", "name": "Closed roads", "value": current_node + adjacent_roads}]
+    # Update the inital parameters(current_node) to a new parameters (new_params) by
+    # merging it with the list of adjacent
+    # breakpoint()
+    new_params = [{"type": "list<int>", "name": "Closed roads", "value": current_node.state + adjacent_roads}]
     print("NEW_ROADS_SET =", new_params)
 
     # Load the GAMA model with the new parameters
@@ -116,45 +174,49 @@ async def child_node(client: GamaBaseClient, experiment_id, current_node, adjace
     return {"max_aqi": max_aqi, "closed_roads": closed_roads}
 
 
-async def tree_exploration(client: GamaBaseClient, experiment_id, current_node):
+async def tree_exploration(client: GamaBaseClient, experiment_id, current_node: Node, root: Node, ax):
     # Run the GAMA simulation and get the list of closed_roads and max_aqi
     await GAMA_sim(client, experiment_id)
     closed_roads = await get_closed_roads(client, experiment_id)
     max_aqi = await get_max_aqi(client, experiment_id)
+    current_node.aqi = max_aqi
+    refresh_plot(root, current_node, ax, True)
 
     while True:
         # Call a function in GAMA to get a list of adjacent roads to the input roads
-        adjacent = await get_adjacent_roads(client, experiment_id, current_node)
+        adjacent = await get_adjacent_roads(client, experiment_id, current_node.state)
 
         # Generate child nodes and explore them recursively
-        child_nodes = []
         for adj in adjacent:
-            child_nodes.append(await child_node(client, experiment_id, current_node, [adj]))
+            child = await child_node(client, experiment_id, current_node, [adj])
+            child_n = Node(child["closed_roads"])
+            child_n.aqi = child["max_aqi"]
+            current_node.children += [child_n]
 
         # Find the child node with the lowest max_aqi for further exploration
-        lowest_child = min(child_nodes, key=lambda x: x["max_aqi"])
+        lowest_child = min(current_node.children, key=lambda x: x.aqi)
 
-        # If the child with the lowest max_aqi has a higher max_aqi than the max_aqi of the current node, stop exploration
-        if lowest_child["max_aqi"] > max_aqi:
+        # If the child with the lowest max_aqi has a higher max_aqi than the max_aqi of
+        # the current node, stop exploration
+        if lowest_child.aqi > max_aqi:
             print("Stopping exploration")
             print("CLOSED_ROADS =", closed_roads)
             print("MAX_AQI =", max_aqi)
-            return
+            return lowest_child
         
-        # If all elements is iterated in the current list adjacent, the last child of the exploration with the lowest max_aqi is updated to be the current node, do the tree_exploration function again to get another list of adjacent to that current node, start exploring again
+        # If all elements is iterated in the current list adjacent, the last child of
+        # the exploration with the lowest max_aqi is updated to be the current node,
+        # do the tree_exploration function again to get another list of adjacent to
+        # that current node, start exploring again
         if not adjacent:
-            current_node = lowest_child["closed_roads"]
-            await tree_exploration(client, experiment_id, current_node)
-            return
+            return await tree_exploration(client, experiment_id, lowest_child, root, ax)
 
         # Print the closed_roads and max_aqi of the child node with the lowest max_aqi in the tree and explore it
         print("Exploring child node with lowest max_aqi:")
-        print("CLOSED_ROADS =", lowest_child["closed_roads"])
-        print("MAX_AQI =", lowest_child["max_aqi"])
+        print("CLOSED_ROADS =", lowest_child.state)
+        print("MAX_AQI =", lowest_child.aqi)
 
-        current_node = lowest_child["closed_roads"]
-        await tree_exploration(client, experiment_id, current_node)
-
+        return await tree_exploration(client, experiment_id, lowest_child, root, ax)
 
 async def main():
     global experiment_future
@@ -170,10 +232,14 @@ async def main():
     # Initial parameter
     root_node = [10, 11, 82, 132, 133, 158, 201, 202, 203, 271, 274, 276, 277, 279, 292, 302, 303, 304, 305, 306, 307, 308, 309, 310, 311, 344, 425, 426, 427, 428, 540, 583, 585, 640]
     MY_EXP_INIT_PARAMETERS = [{"type": "list<int>", "name": "Closed roads", "value": root_node}]
+    root = Node(root_node)
 
     # Connect to the GAMA server
     client = GamaBaseClient(MY_SERVER_URL, MY_SERVER_PORT, message_handler)
-    await client.connect(ping_interval = None)
+    await client.connect(ping_interval=None)
+
+    # initialise a screen to plot the tree
+    fig, ax = plt.subplots()
 
     # Load the model
     print("initialize a gaml model")
@@ -193,9 +259,11 @@ async def main():
     start_time = time.time()
 
     # Run the tree exploration algorithm to find the child node with the lowest max_aqi value
-    await tree_exploration(client, experiment_id, root_node)
+    leaf = await tree_exploration(client, experiment_id, root, root, ax)
 
     await kill_GAMA_simulation(client, experiment_id)
+
+    refresh_plot(root, leaf, ax, True)
 
     # End the timer
     end_time = time.time()
