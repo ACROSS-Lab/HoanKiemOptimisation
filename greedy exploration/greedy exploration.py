@@ -69,18 +69,16 @@ async def get_adjacent_roads(client, experiment_id, current_node):
     return adjacent
 
 
-# 1 steps = 15 seconds
-# 4 steps = 1 minute
-# 240 steps = 1 hr
-# 5760 steps = 1 day 
-# 11520 steps = 1 weekend 
-# 40320 steps = 1 week
-
-
 async def GAMA_sim(client, experiment_id):
+    # 1 steps = 15 seconds
+    # 4 steps = 1 minute
+    # 240 steps = 1 hr
+    # 5760 steps = 1 day 
+    # 11520 steps = 1 weekend 
+    # 40320 steps = 1 week
     global step_future
     print("Running the experiment")
-     # Run the GAMA simulation for n + 2 steps
+    # Run the GAMA simulation for n + 2 steps (2 blank steps for initalization prob)
     step_future = asyncio.get_running_loop().create_future()
     await client.step(experiment_id, 11520 + 2, True)
     gama_response = await step_future
@@ -100,16 +98,12 @@ async def kill_GAMA_simulation(client, experiment_id):
         print("Unable to stop the experiment", gama_response)
         return
 
-
-
-count = -1 #to start at 0
-
+count = -1 #nto start at 0
 
 def get_id() -> int:
     global count
     count += 1
     return count
-
 
 class Node:
     def __init__(self, closed_roads: List[int], parent=None):
@@ -174,13 +168,15 @@ async def child_node(client: GamaBaseClient, experiment_id, current_node: Node, 
     return {"max_aqi": max_aqi, "closed_roads": closed_roads}
 
 
-async def tree_exploration(client: GamaBaseClient, experiment_id, current_node: Node, root: Node, ax):
+async def greedy_exploration(client: GamaBaseClient, experiment_id, current_node: Node, root: Node, ax):
     # Run the GAMA simulation and get the list of closed_roads and max_aqi
     await GAMA_sim(client, experiment_id)
     closed_roads = await get_closed_roads(client, experiment_id)
     max_aqi = await get_max_aqi(client, experiment_id)
     current_node.aqi = max_aqi
-    refresh_plot(root, current_node, ax, True)
+
+    # Plot the tree/graph (toggle comment)
+    # refresh_plot(root, current_node, ax, True)
 
     while True:
         # Call a function in GAMA to get a list of adjacent roads to the input roads
@@ -206,17 +202,17 @@ async def tree_exploration(client: GamaBaseClient, experiment_id, current_node: 
         
         # If all elements is iterated in the current list adjacent, the last child of
         # the exploration with the lowest max_aqi is updated to be the current node,
-        # do the tree_exploration function again to get another list of adjacent to
+        # call the greedy_exploration function again to get another list of adjacent to
         # that current node, start exploring again
         if not adjacent:
-            return await tree_exploration(client, experiment_id, lowest_child, root, ax)
+            return await greedy_exploration(client, experiment_id, lowest_child, root, ax)
 
-        # Print the closed_roads and max_aqi of the child node with the lowest max_aqi in the tree and explore it
+        # Print the closed_roads and max_aqi of the child node with the lowest max_aqi in the graph and explore it
         print("Exploring child node with lowest max_aqi:")
         print("CLOSED_ROADS =", lowest_child.state)
         print("MAX_AQI =", lowest_child.aqi)
 
-        return await tree_exploration(client, experiment_id, lowest_child, root, ax)
+        return await greedy_exploration(client, experiment_id, lowest_child, root, ax)
 
 async def main():
     global experiment_future
@@ -225,11 +221,12 @@ async def main():
     MY_SERVER_URL = "localhost"
     MY_SERVER_PORT = 6868
 
-    GAML_FILE_PATH_ON_SERVER = str(Path(__file__).parents[0] / "greedy model" / "models" / "model.gaml").replace('\\','/') 
+    GAML_FILE_PATH_ON_SERVER = str(Path(__file__).parents[0] / "greedy model" / "models" / "HKmodel_greedy.gaml").replace('\\','/') 
     
     EXPERIMENT_NAME = "exp"
 
     # Initial parameter
+    # Pedestrian area (Phố đi bộ Hồ Hoàn Kiếm)
     root_node = [10, 11, 82, 132, 133, 158, 201, 202, 203, 271, 274, 276, 277, 279, 292, 302, 303, 304, 305, 306, 307, 308, 309, 310, 311, 344, 425, 426, 427, 428, 540, 583, 585, 640]
     MY_EXP_INIT_PARAMETERS = [{"type": "list<int>", "name": "Closed roads", "value": root_node}]
     root = Node(root_node)
@@ -238,8 +235,8 @@ async def main():
     client = GamaBaseClient(MY_SERVER_URL, MY_SERVER_PORT, message_handler)
     await client.connect(ping_interval=None)
 
-    # initialise a screen to plot the tree
-    fig, ax = plt.subplots()
+    # initialise a screen to plot the graph
+    ax = plt.subplots()
 
     # Load the model
     print("initialize a gaml model")
@@ -258,8 +255,8 @@ async def main():
     # Start the timer
     start_time = time.time()
 
-    # Run the tree exploration algorithm to find the child node with the lowest max_aqi value
-    leaf = await tree_exploration(client, experiment_id, root, root, ax)
+    # Run the greedy exploration algorithm to find the child node with the lowest max_aqi value
+    leaf = await greedy_exploration(client, experiment_id, root, root, ax)
 
     await kill_GAMA_simulation(client, experiment_id)
 
@@ -269,7 +266,6 @@ async def main():
     end_time = time.time()
     total_time = end_time - start_time
     print("Total time:", total_time, "seconds")
-
 
 if __name__ == "__main__":
     asyncio.run(main())

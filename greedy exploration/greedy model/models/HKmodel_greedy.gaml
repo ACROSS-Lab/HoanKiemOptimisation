@@ -216,6 +216,7 @@ global
 	reflex save_results when: ( time > 0 )and every(4 #cycle) {
 		save 
 		(
+			"nb_closed_roads"   +   length(closed_roads)	+ ": " +
 			"closed roads: " 	+ 	string(closed_roads) 	+ "; " +
 			"cycle: " 			+ 	string(cycle) 			+ "; " + 
 			"max_aqi: " 		+ 	max_aqi					+ "; " + 
@@ -223,7 +224,7 @@ global
 		) 
 		to: "/results/Greedydata.txt" format: text rewrite: false;
 		
-		save [closed_roads, cycle, max_aqi, mean_aqi] to: "/results/Greedydata.csv" format: "csv" rewrite: false header: true  ;
+//		save [closed_roads, cycle, max_aqi, mean_aqi] to: "/results/Greedydata.csv" format: "csv" rewrite: false header: true  ;
 	} 
 	
 	reflex benchmark when: benchmark and every(4 #cycle) {
@@ -252,12 +253,12 @@ experiment exp autorun: false{
 	parameter "Refreshing time plot" var: refreshing_rate_plot init: 1#mn min:1#mn max: 1#h;
 	parameter "Closed roads" var: closed_roads <- [1,2,3,4,5];
 	
-	reflex save_simulation when: ( time > 0 ) {	
-		write "Save of simulation : " + save_simulation('/results/greedysim.gsim');				
-	}
+//	reflex save_simulation when: ( time > 0 ) {	
+//		write "Save of simulation : " + save_simulation('/results/greedysim.gsim');				
+//	}
 	
 	output{
-		display my_display autosave: true type: opengl background: #black{
+		display my_display type: opengl background: #black{
 			species vehicle;
 			species road;
 			species natural;
