@@ -86,7 +86,7 @@ global
 	
 	
 	reflex update_car_population {
-		int delta_cars <- n_cars - length(vehicle count (each.type = "car"));
+		int delta_cars <- n_cars - vehicle count (each.type = "car");
 		do update_vehicle_population("car", delta_cars);
 		ask first(progress_bar where (each.title = "Cars")) {
 			do update(float(n_cars));
@@ -95,7 +95,7 @@ global
 	
 	
 	reflex update_motorbike_population {
-		int delta_motorbikes <- n_motorbikes - - length(vehicle count (each.type = "motorbike"));
+		int delta_motorbikes <- n_motorbikes - vehicle count (each.type = "motorbike");
 		do update_vehicle_population("motorbike", delta_motorbikes);
 		ask first(progress_bar where (each.title = "Motorbikes")) {
 			do update(float(n_motorbikes));
@@ -251,7 +251,8 @@ experiment exp autorun: false{
 	parameter "Number of motorbikes" var: n_motorbikes <- 200 min: 0 max: 1000;
 	parameter "Number of cars" var: n_cars <- 5 min: 75 max: 500;
 	parameter "Refreshing time plot" var: refreshing_rate_plot init: 1#mn min:1#mn max: 1#h;
-	parameter "Closed roads" var: closed_roads <- [1,2,3,4,5];
+	parameter "Closed roads" var: closed_roads <- [10, 11, 82, 132, 133, 158, 201, 202, 203, 271, 274, 276, 277, 279, 292, 302, 303, 304, 305, 306, 307, 308, 309, 310, 311, 344, 425, 426, 427, 428, 540, 583, 585, 640];
+	float seed <- 0.9314761131573912;
 	
 //	reflex save_simulation when: ( time > 0 ) {	
 //		write "Save of simulation : " + save_simulation('/results/greedysim.gsim');				
