@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 from datetime import datetime
 from typing import Dict, List
 from asyncio import Future
@@ -47,15 +48,6 @@ async def get_max_aqi(client, experiment_id):
     return float(gama_response["content"])
 
 
-async def get_closed_roads(client, experiment_id):
-    global expression_future
-    expression_future = asyncio.get_running_loop().create_future()
-    await client.expression(experiment_id, r"closed_roads")
-    gama_response = await expression_future
-    print("CLOSED_ROADS =", gama_response["content"])
-    return json.loads(gama_response["content"])
-
-
 async def get_adjacent_roads(client, experiment_id, current_node):
     global expression_future
     expression_future = asyncio.get_running_loop().create_future()
@@ -69,7 +61,7 @@ async def get_adjacent_roads(client, experiment_id, current_node):
     return adjacent
 
 
-async def GAMA_sim(client, experiment_id):
+async def GAMA_sim(client, experiment_id, closed_roads):
     # 1 steps = 15 seconds
     # 4 steps = 1 minute
     # 240 steps = 1 hr
@@ -77,6 +69,16 @@ async def GAMA_sim(client, experiment_id):
     # 11520 steps = 1 weekend 
     # 40320 steps = 1 week
     global step_future
+    global expression_future
+    print("Ask for the seed")
+    expression_future = asyncio.get_running_loop().create_future()
+    await client.expression(experiment_id, "seed")
+    gama_response = await expression_future
+    if gama_response["type"] != MessageTypes.CommandExecutedSuccessfully.value:
+        print("Unable to ask for the seed", gama_response)
+        return
+    print("seed", gama_response["content"])
+
     print("Running the experiment")
     # Run the GAMA simulation for n + 2 steps (2 blank steps for initalization prob)
     step_future = asyncio.get_running_loop().create_future()
@@ -85,6 +87,18 @@ async def GAMA_sim(client, experiment_id):
     if gama_response["type"] != MessageTypes.CommandExecutedSuccessfully.value:
         print("Unable to execute the experiment", gama_response)
         return
+
+    print("Taking a screenshot")
+    dir = str(Path(__file__).parents[0] / "results" )
+    os.makedirs(dir, exist_ok=True)
+    take_snapshot_command = r"save snapshot('my_display') to:'" + dir.replace('\\', '/') + "/" + "-".join([str(road) for road in closed_roads]) + ".png';"
+    expression_future = asyncio.get_running_loop().create_future()
+    await client.expression(experiment_id, take_snapshot_command)
+    gama_response = await expression_future
+    if gama_response["type"] != MessageTypes.CommandExecutedSuccessfully.value:
+        print("Unable to save the display", gama_response)
+        return
+
 
 
 async def kill_GAMA_simulation(client, experiment_id):
@@ -155,23 +169,30 @@ async def child_node(client: GamaBaseClient, experiment_id, current_node: Node, 
     # Update the inital parameters(current_node) to a new parameters (new_params) by
     # merging it with the list of adjacent
     # breakpoint()
-    new_params = [{"type": "list<int>", "name": "Closed roads", "value": current_node.state + adjacent_roads}]
+    new_closed_roads = current_node.state + adjacent_roads
+
+    #removing duplicates
+    new_closed_roads = list(dict.fromkeys(new_closed_roads))
+
+    #sorting
+    new_closed_roads.sort()
+
+    new_params = [{"type": "list<int>", "name": "Closed roads", "value": new_closed_roads}]
     print("NEW_ROADS_SET =", new_params)
 
     # Load the GAMA model with the new parameters
     await client.reload(experiment_id, new_params)
 
-    await GAMA_sim(client, experiment_id)
-    closed_roads = await get_closed_roads(client, experiment_id)
+    await GAMA_sim(client, experiment_id, new_closed_roads)
     max_aqi = await get_max_aqi(client, experiment_id)
 
-    return {"max_aqi": max_aqi, "closed_roads": closed_roads}
+    return {"max_aqi": max_aqi, "closed_roads": new_closed_roads}
 
 
 async def greedy_exploration(client: GamaBaseClient, experiment_id, current_node: Node, root: Node, ax):
     # Run the GAMA simulation and get the list of closed_roads and max_aqi
-    await GAMA_sim(client, experiment_id)
-    closed_roads = await get_closed_roads(client, experiment_id)
+    await GAMA_sim(client, experiment_id, current_node.state)
+
     max_aqi = await get_max_aqi(client, experiment_id)
     current_node.aqi = max_aqi
 
@@ -196,7 +217,7 @@ async def greedy_exploration(client: GamaBaseClient, experiment_id, current_node
         # the current node, stop exploration
         if lowest_child.aqi > max_aqi:
             print("Stopping exploration")
-            print("CLOSED_ROADS =", closed_roads)
+            print("CLOSED_ROADS =", current_node.state)
             print("MAX_AQI =", max_aqi)
             return lowest_child
         

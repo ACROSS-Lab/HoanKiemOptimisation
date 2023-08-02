@@ -229,7 +229,7 @@ global
 	
 	reflex benchmark when: benchmark and every(4 #cycle) {
 		float start <- machine_time;
-		write "MAX AQI: " + max_aqi;
+//		write "MAX AQI: " + max_aqi;
 //		write "MEAN AQI: " + mean_aqi;
 		
 //		time_per_4cycles <- machine_time - start;
