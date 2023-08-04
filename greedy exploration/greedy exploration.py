@@ -20,6 +20,7 @@ pause_future: Future
 expression_future: Future
 step_future: Future
 stop_future: Future
+reload_future: Future
 
 
 async def message_handler(message):
@@ -37,6 +38,8 @@ async def message_handler(message):
             step_future.set_result(message)
         elif message["command"]["type"] == CommandTypes.Stop.value:
             stop_future.set_result(message)
+        elif message["command"]["type"] == CommandTypes.Reload.value:
+            reload_future.set_result(message)
 
 
 async def get_max_aqi(client, experiment_id):
@@ -70,17 +73,9 @@ async def GAMA_sim(client, experiment_id, closed_roads):
     # 40320 steps = 1 week
     global step_future
     global expression_future
-    print("Ask for the seed")
-    expression_future = asyncio.get_running_loop().create_future()
-    await client.expression(experiment_id, "seed")
-    gama_response = await expression_future
-    if gama_response["type"] != MessageTypes.CommandExecutedSuccessfully.value:
-        print("Unable to ask for the seed", gama_response)
-        return
-    print("seed", gama_response["content"])
 
     print("Running the experiment")
-    # Run the GAMA simulation for n + 2 steps (2 blank steps for initalization prob)
+    # Run the GAMA simulation for n + 2 steps (2 blank steps for initialization prob)
     step_future = asyncio.get_running_loop().create_future()
     await client.step(experiment_id, 11520 + 2, True)
     gama_response = await step_future
@@ -88,16 +83,19 @@ async def GAMA_sim(client, experiment_id, closed_roads):
         print("Unable to execute the experiment", gama_response)
         return
 
-    print("Taking a screenshot")
-    dir = str(Path(__file__).parents[0] / "results" )
+    # screenshoting
+    dir = str(Path(__file__).parents[0] / "results")
     os.makedirs(dir, exist_ok=True)
-    take_snapshot_command = r"save snapshot('my_display') to:'" + dir.replace('\\', '/') + "/" + "-".join([str(road) for road in closed_roads]) + ".png';"
+    name = "-".join([str(road) for road in closed_roads]) + ".png"
+    print("Saving a screenshot to", dir, name)
+    take_snapshot_command = r"save snapshot('my_display') to:'" + dir.replace('\\', '/') + "/" + name + "';"
     expression_future = asyncio.get_running_loop().create_future()
     await client.expression(experiment_id, take_snapshot_command)
     gama_response = await expression_future
     if gama_response["type"] != MessageTypes.CommandExecutedSuccessfully.value:
         print("Unable to save the display", gama_response)
         return
+
 
 
 
@@ -164,7 +162,7 @@ def refresh_plot(root: Node, current_node: Node, ax, save_to_file: bool):
 
 
 async def child_node(client: GamaBaseClient, experiment_id, current_node: Node, adjacent_roads):
-    global expression_future, step_future, stop_future
+    global expression_future, step_future, stop_future, reload_future
 
     # Update the inital parameters(current_node) to a new parameters (new_params) by
     # merging it with the list of adjacent
@@ -181,7 +179,12 @@ async def child_node(client: GamaBaseClient, experiment_id, current_node: Node, 
     print("NEW_ROADS_SET =", new_params)
 
     # Load the GAMA model with the new parameters
+    reload_future = asyncio.get_running_loop().create_future()
     await client.reload(experiment_id, new_params)
+    res_reload = await reload_future
+    if res_reload["type"] != MessageTypes.CommandExecutedSuccessfully.value:
+        print("Unable to reload the simulation", res_reload)
+        return
 
     await GAMA_sim(client, experiment_id, new_closed_roads)
     max_aqi = await get_max_aqi(client, experiment_id)

@@ -28,10 +28,13 @@ grid pollutant_cell width: grid_size height: grid_size neighbors: 8 parallel: tr
 	float pm <- 0.0;
 
 	float aqi;
-	float norm_pollution_level -> (co / ALLOWED_AMOUNT["CO"] + nox / ALLOWED_AMOUNT["NOx"] + 
-																		so2 / ALLOWED_AMOUNT["SO2"] + pm / ALLOWED_AMOUNT["PM"]) / cell_volume / 4;
+	float norm_pollution_level -> 	(
+										co / ALLOWED_AMOUNT["CO"] + nox / ALLOWED_AMOUNT["NOx"] + 
+										so2 / ALLOWED_AMOUNT["SO2"] + pm / ALLOWED_AMOUNT["PM"]
+									) 
+									/ cell_volume / 4;
 	
-	rgb color <- #black update: rgb(255 * norm_pollution_level, 0, 0);
+	rgb color <- #black update:  world.get_pollution_color(aqi);
 	
 	reflex calculate_aqi {
 		float aqi_co <- (co / cell_volume) / ALLOWED_AMOUNT["CO"] * 100;

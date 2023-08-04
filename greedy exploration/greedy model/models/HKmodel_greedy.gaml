@@ -248,30 +248,48 @@ global
 
 
 experiment exp autorun: false{
-	parameter "Number of motorbikes" var: n_motorbikes <- 200 min: 0 max: 1000;
-	parameter "Number of cars" var: n_cars <- 5 min: 75 max: 500;
+	parameter "Number of motorbikes" var: n_motorbikes <- 200 min: 0 max: 1500;
+	parameter "Number of cars" var: n_cars <- 75 min: 75 max: 500;
 	parameter "Refreshing time plot" var: refreshing_rate_plot init: 1#mn min:1#mn max: 1#h;
 	parameter "Closed roads" var: closed_roads <- [10, 11, 82, 132, 133, 158, 201, 202, 203, 271, 274, 276, 277, 279, 292, 302, 303, 304, 305, 306, 307, 308, 309, 310, 311, 344, 425, 426, 427, 428, 540, 583, 585, 640];
-	float seed <- 0.9314761131573912;
+	parameter "Display mode" var:display_mode <- true;
+	
 	
 //	reflex save_simulation when: ( time > 0 ) {	
 //		write "Save of simulation : " + save_simulation('/results/greedysim.gsim');				
 //	}
 	
 	output{
-		display my_display type: opengl background: #black{
+		display my_display type: 3d background: #black axes:false{
+			species boundary;			
 			species vehicle;
 			species road;
 			species natural;
 			species building;
 			species decoration_building;
-
 			species dummy_road;
-			species progress_bar;
-			//species param_indicator;
+		 	grid pollutant_cell transparency:0.4 elevation: norm_pollution_level * 10 triangulation: true;
 			
+		//	species background;
+			species progress_bar;
+			species param_indicator;
+	   //	species line_graph;
 			species line_graph_aqi;
 			species indicator_health_concern_level;
+//			species vehicle;
+//			species road;
+//			species natural;
+//			species building;
+//			species decoration_building;
+//
+//			species dummy_road;
+//			species progress_bar;
+//			//species param_indicator;
+//			
+//			species line_graph_aqi;
+//			species indicator_health_concern_level;
+
+			//mesh pollutant_cell triangulation: true transparency: 0.4 smooth: 3 above: 5 color: color position: {0, 0, 0.01} visible:true;
 		}
 	}
 }

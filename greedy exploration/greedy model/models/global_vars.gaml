@@ -12,7 +12,7 @@ global {
 	int n_cars <- 30;
 	int n_motorbikes <- 100;
 	int road_scenario <- 3;
-	bool display_mode;
+	bool display_mode <- false;
 	
 	// Parameter of visualization to avoid z fighting
 	float Z_LVL1 <- 0.1;
