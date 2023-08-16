@@ -24,7 +24,7 @@ reload_future: Future
 
 
 async def message_handler(message):
-    print("received message:", message)
+    # print("received message:", message)
     if "command" in message:
         if message["command"]["type"] == CommandTypes.Load.value:
             experiment_future.set_result(message)
@@ -266,20 +266,21 @@ async def main():
     # Experiment and Gama-server constants
     MY_SERVER_URL = "localhost"
     MY_SERVER_PORT = 6868
-    GAML_FILE_PATH_ON_SERVER = str(Path(__file__).parents[2] / "Hoan Kiem Air Model" / "models" / "HKAM.gaml" ).replace('\\','/')
+    GAML_FILE_PATH_ON_SERVER = str(Path(__file__).parents[1] / "Hoan Kiem Air Model" / "models" / "HKAM.gaml" ).replace('\\','/')
     EXPERIMENT_NAME = "exp"
 
     # Initial parameter
     # Pedestrian area (Phố đi bộ Hồ Hoàn Kiếm)
     initial_closed_roads = [10, 11, 82, 132, 133, 158, 201, 202, 203, 271, 274, 276, 277, 279, 292, 302, 303, 304, 305, 306, 307, 308, 309, 310, 311, 344, 425, 426, 427, 428, 540, 583, 585, 640]
     MY_EXP_INIT_PARAMETERS = [{"type": "list<int>", "name": "Closed roads", "value": initial_closed_roads}]
+    print("Initial closed roads = ", initial_closed_roads)
 
     # Connect to the GAMA server
     client = GamaBaseClient(MY_SERVER_URL, MY_SERVER_PORT, message_handler)
     await client.connect(ping_interval = None)
 
     # Load the model
-    print("initialize a gaml model")
+    print("Initializing GAMA model")
     experiment_future = asyncio.get_running_loop().create_future()
     await client.load(GAML_FILE_PATH_ON_SERVER, EXPERIMENT_NAME, True, False, False, True, MY_EXP_INIT_PARAMETERS)
     gama_response = await experiment_future

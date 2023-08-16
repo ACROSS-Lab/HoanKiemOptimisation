@@ -241,9 +241,9 @@ experiment exp autorun: false{
 	parameter "Display mode" var:display_mode <- true;
 	
 	
-	reflex save_simulation when: every(4 #cycle) {	
-		write "Save of simulation : " + save_simulation('/HKAM Data/StoredSimulations.gsim');				
-	}
+//	reflex save_simulation when: every(4 #cycle) {	
+//		write "Save of simulation : " + save_simulation('/HKAM Data/StoredSimulations.gsim');				
+//	}
 	
 	output{
 		display my_display type: 3d background: #black axes:false{

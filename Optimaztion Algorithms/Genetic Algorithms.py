@@ -191,7 +191,7 @@ class Individual(object):
 # Experiment and Gama-server constants
 MY_SERVER_URL = "localhost"
 MY_SERVER_PORT = 6868
-GAML_FILE_PATH_ON_SERVER = str(Path(__file__).parents[2] / "Hoan Kiem Air Model" / "models" / "HKAM.gaml" ).replace('\\','/')
+GAML_FILE_PATH_ON_SERVER = str(Path(__file__).parents[1] / "Hoan Kiem Air Model" / "models" / "HKAM.gaml" ).replace('\\','/')
 EXPERIMENT_NAME = "exp"
 
 
@@ -210,7 +210,7 @@ async def main():
 	await client.connect(ping_interval = None)
 
 	# Load the model
-	# print("initialize a gaml model")
+	print("Initializing GAMA model")
 	experiment_future = asyncio.get_running_loop().create_future()
 	await client.load(GAML_FILE_PATH_ON_SERVER, EXPERIMENT_NAME, True, False, False, True, MY_EXP_INIT_PARAMETERS)
 	gama_response = await experiment_future
