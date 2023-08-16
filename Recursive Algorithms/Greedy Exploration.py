@@ -71,8 +71,7 @@ async def GAMA_sim(client, experiment_id, closed_roads):
     # 5760 steps = 1 day 
     # 11520 steps = 1 weekend 
     # 40320 steps = 1 week
-    global step_future
-    global expression_future
+    global step_future, expression_future
 
     print("Running the experiment")
     # Run the GAMA simulation for n + 2 steps (2 blank steps for initialization prob)
@@ -84,19 +83,17 @@ async def GAMA_sim(client, experiment_id, closed_roads):
         return
 
     # screenshoting
-    dir = str(Path(__file__).parents[0] / "results")
-    os.makedirs(dir, exist_ok=True)
-    name = "-".join([str(road) for road in closed_roads]) + ".png"
-    print("Saving a screenshot to", dir, name)
-    take_snapshot_command = r"save snapshot('my_display') to:'" + dir.replace('\\', '/') + "/" + name + "';"
-    expression_future = asyncio.get_running_loop().create_future()
-    await client.expression(experiment_id, take_snapshot_command)
-    gama_response = await expression_future
-    if gama_response["type"] != MessageTypes.CommandExecutedSuccessfully.value:
-        print("Unable to save the display", gama_response)
-        return
-
-
+    # dir = str(Path(__file__).parents[0] / " Greedy Result ")
+    # os.makedirs(dir, exist_ok=True)
+    # name = "-".join([str(road) for road in closed_roads]) + ".png"
+    # print("Saving a screenshot to", dir, name)
+    # take_snapshot_command = r"save snapshot('my_display') to:'" + dir.replace('\\', '/') + "/" + name + "';"
+    # expression_future = asyncio.get_running_loop().create_future()
+    # await client.expression(experiment_id, take_snapshot_command)
+    # gama_response = await expression_future
+    # if gama_response["type"] != MessageTypes.CommandExecutedSuccessfully.value:
+    #     print("Unable to save the display", gama_response)
+    #     return
 
 
 async def kill_GAMA_simulation(client, experiment_id):
@@ -162,11 +159,10 @@ def refresh_plot(root: Node, current_node: Node, ax, save_to_file: bool):
 
 
 async def child_node(client: GamaBaseClient, experiment_id, current_node: Node, adjacent_roads):
-    global expression_future, step_future, stop_future, reload_future
+    global expression_future, step_future, reload_future
 
     # Update the inital parameters(current_node) to a new parameters (new_params) by
     # merging it with the list of adjacent
-    # breakpoint()
     new_closed_roads = current_node.state + adjacent_roads
 
     #removing duplicates
@@ -245,7 +241,7 @@ async def main():
     MY_SERVER_URL = "localhost"
     MY_SERVER_PORT = 6868
 
-    GAML_FILE_PATH_ON_SERVER = str(Path(__file__).parents[0] / "greedy model" / "models" / "HKmodel_greedy.gaml").replace('\\','/') 
+    GAML_FILE_PATH_ON_SERVER = str(Path(__file__).parents[2] / "Hoan Kiem Air Model" / "models" / "HKAM.gaml" ).replace('\\','/')
     
     EXPERIMENT_NAME = "exp"
 
@@ -284,7 +280,7 @@ async def main():
 
     await kill_GAMA_simulation(client, experiment_id)
 
-    refresh_plot(root, leaf, ax, True)
+    #refresh_plot(root, leaf, ax, False)
 
     # End the timer
     end_time = time.time()

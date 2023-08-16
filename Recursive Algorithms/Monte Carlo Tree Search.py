@@ -3,6 +3,8 @@ import math
 import random
 from pathlib import Path
 
+import os
+
 import asyncio
 import json
 from typing import Dict
@@ -13,22 +15,32 @@ from gama_client.command_types import CommandTypes
 from gama_client.message_types import MessageTypes
 
 experiment_future: Future
+play_future: Future
+pause_future: Future
 expression_future: Future
 step_future: Future
 stop_future: Future
+reload_future: Future
+
 
 async def message_handler(message):
     print("received message:", message)
     if "command" in message:
         if message["command"]["type"] == CommandTypes.Load.value:
             experiment_future.set_result(message)
+        elif message["command"]["type"] == CommandTypes.Play.value:
+            play_future.set_result(message)
+        elif message["command"]["type"] == CommandTypes.Pause.value:
+            pause_future.set_result(message)
         elif message["command"]["type"] == CommandTypes.Expression.value:
             expression_future.set_result(message)
         elif message["command"]["type"] == CommandTypes.Step.value:
             step_future.set_result(message)
         elif message["command"]["type"] == CommandTypes.Stop.value:
             stop_future.set_result(message)
-
+        elif message["command"]["type"] == CommandTypes.Reload.value:
+            reload_future.set_result(message)
+            
 async def get_max_aqi(client, experiment_id):
     global expression_future
     expression_future = asyncio.get_running_loop().create_future()
@@ -36,7 +48,6 @@ async def get_max_aqi(client, experiment_id):
     gama_response = await expression_future
     print("MAX_AQI =", gama_response["content"])
     return float(gama_response["content"])
-
 
 async def get_adjacent_roads(client, experiment_id, closed_roads):
     global expression_future
@@ -66,14 +77,14 @@ async def kill_GAMA_simulation(client, experiment_id):
         print("Unable to stop the experiment", gama_response)
         return
 
-async def run_GAMA_simulation(client, experiment_id):
+async def run_GAMA_simulation(client, experiment_id, closed_roads):
     # 1 steps = 15 seconds
     # 4 steps = 1 minute
     # 240 steps = 1 hr
     # 5760 steps = 1 day 
     # 11520 steps = 1 weekend 
     # 40320 steps = 1 week
-    global step_future
+    global expression_future, step_future
     print("Running the experiment")
     # Run the GAMA simulation for n + 2 steps (2 blank steps for initialization prob)
     step_future = asyncio.get_running_loop().create_future()
@@ -82,6 +93,19 @@ async def run_GAMA_simulation(client, experiment_id):
     if gama_response["type"] != MessageTypes.CommandExecutedSuccessfully.value:
         print("Unable to execute the experiment", gama_response)
         return
+    
+    # screenshoting
+    # dir = str(Path(__file__).parents[0] / "results")
+    # os.makedirs(dir, exist_ok=True)
+    # name = "-".join([str(road) for road in closed_roads]) + ".png"
+    # print("Saving a screenshot to", dir, name)
+    # take_snapshot_command = r"save snapshot('my_display') to:'" + dir.replace('\\', '/') + "/" + name + "';"
+    # expression_future = asyncio.get_running_loop().create_future()
+    # await client.expression(experiment_id, take_snapshot_command)
+    # gama_response = await expression_future
+    # if gama_response["type"] != MessageTypes.CommandExecutedSuccessfully.value:
+    #     print("Unable to save the display", gama_response)
+    #     return
 
 async def randomPolicy(state):
     while not state.isTerminal():
@@ -212,9 +236,18 @@ class ClosedRoads():
         return possibleActions
     
     async def takeAction(self, action):
+        global reload_future
         newState = await new_closed_roads(self.state, [action])
+        
+        # Load the GAMA model with the new parameters
+        reload_future = asyncio.get_running_loop().create_future()
         await self.client.reload(self.experiment_id, newState)
-        await run_GAMA_simulation(self.client, self.experiment_id)
+        res_reload = await reload_future
+        if res_reload["type"] != MessageTypes.CommandExecutedSuccessfully.value:
+            print("Unable to reload the simulation", res_reload)
+            return
+        
+        await run_GAMA_simulation(self.client, self.experiment_id, newState)
         max_aqi = await get_max_aqi(self.client, self.experiment_id)
         # return newState as an object, max_aqi
         return ClosedRoads(self.client, self.experiment_id, newState[0]["value"], self.root_max_aqi), max_aqi
@@ -233,7 +266,7 @@ async def main():
     # Experiment and Gama-server constants
     MY_SERVER_URL = "localhost"
     MY_SERVER_PORT = 6868
-    GAML_FILE_PATH_ON_SERVER = str(Path(__file__).parents[0] / "MCTS model" / "models" / "HKmodel_MCTS.gaml").replace('\\','/')
+    GAML_FILE_PATH_ON_SERVER = str(Path(__file__).parents[2] / "Hoan Kiem Air Model" / "models" / "HKAM.gaml" ).replace('\\','/')
     EXPERIMENT_NAME = "exp"
 
     # Initial parameter
@@ -261,7 +294,7 @@ async def main():
     # Start the timer
     start_time = time.time()
 
-    await run_GAMA_simulation(client, experiment_id)
+    await run_GAMA_simulation(client, experiment_id, initial_closed_roads)
     root_max_aqi = await get_max_aqi(client, experiment_id)
 
     initialState = ClosedRoads(client = client, 
