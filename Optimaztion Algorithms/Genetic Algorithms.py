@@ -22,7 +22,7 @@ reload_future: Future
 
 
 async def message_handler(message):
-    print("received message:", message)
+    # print("received message:", message)
     if "command" in message:
         if message["command"]["type"] == CommandTypes.Load.value:
             experiment_future.set_result(message)
@@ -40,15 +40,14 @@ async def message_handler(message):
             reload_future.set_result(message)
             
             
-async def run_GAMA_simulation(client, experiment_id, closed_roads):
+async def run_GAMA_simulation(client, experiment_id):
     # 1 steps = 15 seconds
     # 4 steps = 1 minute
     # 240 steps = 1 hr
     # 5760 steps = 1 day 
     # 11520 steps = 1 weekend 
     # 40320 steps = 1 week
-    global step_future
-    global expression_future
+    global step_future, expression_future
     print("Running the experiment")
     
     # Run the GAMA simulation for n + 2 steps (2 blank steps for initialization prob)
@@ -59,18 +58,18 @@ async def run_GAMA_simulation(client, experiment_id, closed_roads):
         print("Unable to execute the experiment", gama_response)
         return
 
-    # screenshoting
-    dir = str(Path(__file__).parents[0] / "results")
-    os.makedirs(dir, exist_ok=True)
-    name = "-".join([str(road) for road in closed_roads]) + ".png"
-    print("Saving a screenshot to", dir, name)
-    take_snapshot_command = r"save snapshot('my_display') to:'" + dir.replace('\\', '/') + "/" + name + "';"
-    expression_future = asyncio.get_running_loop().create_future()
-    await client.expression(experiment_id, take_snapshot_command)
-    gama_response = await expression_future
-    if gama_response["type"] != MessageTypes.CommandExecutedSuccessfully.value:
-        print("Unable to save the display", gama_response)
-        return
+    # # screenshoting
+    # dir = str(Path(__file__).parents[0] / "results")
+    # os.makedirs(dir, exist_ok=True)
+    # name = "-".join([str(road) for road in closed_roads]) + ".png"
+    # print("Saving a screenshot to", dir, name)
+    # take_snapshot_command = r"save snapshot('my_display') to:'" + dir.replace('\\', '/') + "/" + name + "';"
+    # expression_future = asyncio.get_running_loop().create_future()
+    # await client.expression(experiment_id, take_snapshot_command)
+    # gama_response = await expression_future
+    # if gama_response["type"] != MessageTypes.CommandExecutedSuccessfully.value:
+    #     print("Unable to save the display", gama_response)
+    #     return
 
 
 async def kill_GAMA_simulation(client, experiment_id):
@@ -84,6 +83,7 @@ async def kill_GAMA_simulation(client, experiment_id):
         print("Unable to stop the experiment", gama_response)
         return            
   
+  
 async def get_max_aqi(client, experiment_id):
     global expression_future
     expression_future = asyncio.get_running_loop().create_future()
@@ -92,12 +92,13 @@ async def get_max_aqi(client, experiment_id):
     print("MAX_AQI =", gama_response["content"])
     return float(gama_response["content"])    
 
+
 # Define the async function for GAMA simulation
 async def reload_gama_simulation(individual):
     global expression_future, step_future, reload_future
 
     # Update the inital parameters(current_node) to a new parameters (new_params) by merging it with the list of adjacent
-    new_params = [{"type": "list<int>", "name": "Closed roads", "value": individual}]
+    new_params = [{"type": "list<int>", "name": "Closed roads", "value": [i for i,v in enumerate(individual) if v]}]
     print("NEW_ROADS_SET =", new_params)
     
     # Load the GAMA model with the new parameters
@@ -107,19 +108,17 @@ async def reload_gama_simulation(individual):
     if res_reload["type"] != MessageTypes.CommandExecutedSuccessfully.value:
         print("Unable to reload the simulation", res_reload)
         return
-
-    await run_GAMA_simulation(client, experiment_id, new_params)
-
+    await run_GAMA_simulation(client, experiment_id)
     return await get_max_aqi(client, experiment_id)  
+
 
 # Number of individuals in each generation
 POPULATION_SIZE = 1000
 
 PHODIBO = [10, 11, 82, 132, 133, 158, 201, 202, 203, 271, 274, 276, 277, 279, 292, 302, 303, 304, 305, 306, 307, 308, 309, 310, 311, 344, 425, 426, 427, 428, 540, 583, 585, 640]
+PHODIBO_BOOLEAN = [True] * len(PHODIBO)
 remain_roads = [x for x in range(643) if x not in PHODIBO]
 
-# Valid genes
-GENES = PHODIBO + remain_roads
 
 async def cal_fitness(gnome):
 	# Get the AQI for the current set of closed roads (chromosome)
@@ -128,63 +127,65 @@ async def cal_fitness(gnome):
 	fitness = 1.0 / max_aqi
 	return fitness
 
+
 class Individual(object):
-	'''
-	Class representing individual in population
-	'''
-	def __init__(self, chromosome, fitness = 0):
-		self.chromosome = chromosome
-		self.fitness = fitness
-	
+    '''
+    Class representing individual in population
+    '''
+    def __init__(self, chromosome, fitness = 0):
+        self.chromosome = chromosome
+        self.fitness = fitness
+    
+    
+    @classmethod
+    def mutated_genes(self):
+        '''
+        create random genes for mutation
+        '''
+        gene = [random.choice([True, False]) for _ in range(len(remain_roads))]
+        return gene
 
-	@classmethod
-	def mutated_genes(self):
-		'''
-	    create random genes for mutation
-		'''
-		gene = random.choice(remain_roads)
-		return gene
 
-	@classmethod
-	def create_gnome(self):
-		'''
-		create chromosome or string of genes
-		'''
-		global PHODIBO
-		remaining_len = len(GENES) - len(PHODIBO)
-		remaining_genes = [self.mutated_genes() for _ in range(remaining_len)]
-		return PHODIBO + remaining_genes
+    @classmethod
+    def create_gnome(self):
+        '''
+        create chromosome or string of genes
+        '''
+        remaining_genes = self.mutated_genes()
+        return PHODIBO_BOOLEAN + remaining_genes
 
-	async def mate(self, par2):
-		'''
-		Perform mating and produce new offspring
-		'''
 
-		# chromosome for offspring
-		child_chromosome = []
-		for gp1, gp2 in zip(self.chromosome, par2.chromosome):	
+    async def mate(self, par2):
+        '''
+        Perform mating and produce new offspring
+        '''
 
-			# random probability
-			prob = random.random()
+        # chromosome for offspring
+        child_chromosome = []
+        for gp1, gp2 in zip(self.chromosome, par2.chromosome):	
 
-			# if prob is less than 0.45, insert gene
-			# from parent 1
-			if prob < 0.45:
-				child_chromosome.append(gp1)
+            # random probability
+            prob = random.random()
 
-			# if prob is between 0.45 and 0.90, insert
-			# gene from parent 2
-			elif prob < 0.90:
-				child_chromosome.append(gp2)
+            # if prob is less than 0.45, insert gene
+            # from parent 1
+            if prob < 0.45:
+                child_chromosome.append(gp1)
 
-			# otherwise insert random gene(mutate),
-			# for maintaining diversity
-			else:
-				child_chromosome.append(self.mutated_genes())
+            # if prob is between 0.45 and 0.90, insert
+            # gene from parent 2
+            elif prob < 0.90:
+                child_chromosome.append(gp2)
 
-		# create new Individual(offspring) using
-		# generated chromosome for offspring
-		return Individual(child_chromosome, await cal_fitness(child_chromosome))
+            # otherwise insert random gene(mutate),
+            # for maintaining diversity
+            else:
+                child_chromosome.append(self.mutated_genes())
+
+        fitness = await cal_fitness(child_chromosome)
+        # create new Individual(offspring) using
+        # generated chromosome for offspring
+        return Individual(child_chromosome, fitness)
 
 
 
@@ -222,6 +223,8 @@ async def main():
 		print("error while initializing", gama_response, e)
 		return
     
+	# Start the timer
+	start_time = time.time()
     
 	global POPULATION_SIZE
  
@@ -281,24 +284,28 @@ async def main():
 			new_generation.append(child)
 
 		population = new_generation
-		
-  
-		print("Generation: {}\tString: {}\tFitness: {}".format(
+
+		print("Generation: {}\tRoads Set: {}\tFitness: {}".format(
 		generation,
-		", ".join(str(gene) for gene in population[0].chromosome),  # Convert integers to strings
+		[i for i,v in enumerate(population[0].chromosome) if v],  # Convert integers to strings
 		population[0].fitness
 		))
 
 		generation += 1
 
 	
-	print("Generation: {}\tString: {}\tFitness: {}".format(
+	print("Generation: {}\tRoads Set: {}\tFitness: {}".format(
 		generation,
-		", ".join(str(gene) for gene in population[0].chromosome),  # Convert integers to strings
+		[i for i,v in enumerate(population[0].chromosome) if v],  # Convert integers to strings
 		population[0].fitness
 	))
  
 	await kill_GAMA_simulation(client, experiment_id)
+ 
+	# End the timer
+	end_time = time.time()
+	total_time = end_time - start_time
+	print("Total time:", total_time, "seconds")
 
 if __name__ == "__main__":
     asyncio.run(main())

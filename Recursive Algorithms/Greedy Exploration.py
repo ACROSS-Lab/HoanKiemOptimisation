@@ -1,11 +1,12 @@
 import asyncio
 import json
 import os
+import time
 from datetime import datetime
 from typing import Dict, List
 from asyncio import Future
-import time
 from pathlib import Path
+
 import igraph as ig
 import matplotlib.pyplot as plt
 
@@ -107,12 +108,15 @@ async def kill_GAMA_simulation(client, experiment_id):
         print("Unable to stop the experiment", gama_response)
         return
 
+
 count = -1 #nto start at 0
+
 
 def get_id() -> int:
     global count
     count += 1
     return count
+
 
 class Node:
     def __init__(self, closed_roads: List[int], parent=None):
@@ -122,10 +126,12 @@ class Node:
         self.aqi: int = 0
         self.id: int = get_id()
 
+
     def get_root(self) -> ig.Graph:
         if self.parent:
             return self.parent.get_root()
         return ig.Graph(directed=True)
+
 
     def to_graph(self, current_graph: ig.Graph) -> ig.Vertex:
         root = self.get_root() if current_graph is None else current_graph
@@ -233,6 +239,7 @@ async def greedy_exploration(client: GamaBaseClient, experiment_id, current_node
         print("MAX_AQI =", lowest_child.aqi)
 
         return await greedy_exploration(client, experiment_id, lowest_child, root, ax)
+
 
 async def main():
     global experiment_future

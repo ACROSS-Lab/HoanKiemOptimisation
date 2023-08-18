@@ -41,6 +41,7 @@ async def message_handler(message):
         elif message["command"]["type"] == CommandTypes.Reload.value:
             reload_future.set_result(message)
             
+            
 async def get_max_aqi(client, experiment_id):
     global expression_future
     expression_future = asyncio.get_running_loop().create_future()
@@ -48,6 +49,7 @@ async def get_max_aqi(client, experiment_id):
     gama_response = await expression_future
     print("MAX_AQI =", gama_response["content"])
     return float(gama_response["content"])
+
 
 async def get_adjacent_roads(client, experiment_id, closed_roads):
     global expression_future
@@ -61,10 +63,12 @@ async def get_adjacent_roads(client, experiment_id, closed_roads):
     print("ADJACENT_ROADS =", adjacent)
     return adjacent
 
+
 async def new_closed_roads(closed_roads, adj):
     new_closed_roads = [{"type": "list<int>", "name": "Closed roads", "value": closed_roads + adj}] 
     print("NEW_ROADS_SET =", new_closed_roads)
     return new_closed_roads
+
 
 async def kill_GAMA_simulation(client, experiment_id):
     global stop_future
@@ -76,6 +80,7 @@ async def kill_GAMA_simulation(client, experiment_id):
     if gama_response["type"] != MessageTypes.CommandExecutedSuccessfully.value:
         print("Unable to stop the experiment", gama_response)
         return
+
 
 async def run_GAMA_simulation(client, experiment_id, closed_roads):
     # 1 steps = 15 seconds
@@ -107,6 +112,7 @@ async def run_GAMA_simulation(client, experiment_id, closed_roads):
     #     print("Unable to save the display", gama_response)
     #     return
 
+
 async def randomPolicy(state):
     while not state.isTerminal():
         try:
@@ -116,6 +122,7 @@ async def randomPolicy(state):
         state, terminal_max_aqi = await state.takeAction(action)
 
     return state.getReward(terminal_max_aqi = terminal_max_aqi)
+
 
 class treeNode():
     def __init__(self, state, parent, max_aqi):
@@ -135,6 +142,7 @@ class treeNode():
         s.append("isTerminal: %s"%(self.isTerminal))
         s.append("possibleActions: %s"%(self.children.keys()))
         return "%s: {%s}"%(self.__class__.__name__, ', '.join(s))
+
 
 class MCTS():
     def __init__(self, client, experiment_id, timeLimit, iterationLimit, explorationConstant,
@@ -158,6 +166,7 @@ class MCTS():
         self.client = client
         self.experiment_id = experiment_id
 
+
     async def search(self, initialState, root_max_aqi, needDetails=False):
         self.root = treeNode(initialState, parent = None, max_aqi = root_max_aqi)
 
@@ -176,6 +185,7 @@ class MCTS():
         else:
             return action
 
+
     async def executeRound(self):
         """
             execute a selection-expansion-simulation-backpropagation round
@@ -184,6 +194,7 @@ class MCTS():
         reward = await self.rollout(node.state)
         self.backpropogate(node, reward)
 
+
     async def selectNode(self, node):
         while not node.isTerminal:
             if node.isFullyExpanded:
@@ -191,6 +202,7 @@ class MCTS():
             else:
                 return await self.expand(node)
         return node
+
 
     async def expand(self, node):
         actions = await node.state.getPossibleActions()
@@ -205,11 +217,13 @@ class MCTS():
 
         raise Exception("Should never reach here")
 
+
     def backpropogate(self, node, reward):
         while node is not None:
             node.numVisits += 1
             node.totalReward += reward
             node = node.parent
+
 
     def getBestChild(self, node, explorationValue):
         bestValue = float("-inf")
@@ -224,6 +238,7 @@ class MCTS():
                 bestNodes.append(child)
         return random.choice(bestNodes)
 
+
 class ClosedRoads():
     def __init__(self, client, experiment_id, initial_closed_roads, root_max_aqi):
         self.state = initial_closed_roads
@@ -231,9 +246,11 @@ class ClosedRoads():
         self.experiment_id = experiment_id
         self.root_max_aqi = root_max_aqi
 
+
     async def getPossibleActions(self):
         possibleActions = await get_adjacent_roads(self.client, self.experiment_id, self.state)
         return possibleActions
+    
     
     async def takeAction(self, action):
         global reload_future
@@ -252,13 +269,16 @@ class ClosedRoads():
         # return newState as an object, max_aqi
         return ClosedRoads(self.client, self.experiment_id, newState[0]["value"], self.root_max_aqi), max_aqi
 
+
     def isTerminal(self):
         # Closing max 50 roads
         if len(self.state) == 50:
             return True
 
+
     def getReward(self, terminal_max_aqi):
         return self.root_max_aqi - terminal_max_aqi
+
 
 async def main():
     global experiment_future
