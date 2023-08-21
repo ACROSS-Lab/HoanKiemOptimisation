@@ -1,6 +1,7 @@
 import time
 import math
 import random
+import uuid
 from pathlib import Path
 
 import os
@@ -65,7 +66,8 @@ async def get_adjacent_roads(client, experiment_id, closed_roads):
 
 
 async def new_closed_roads(closed_roads, adj):
-    new_closed_roads = [{"type": "list<int>", "name": "Closed roads", "value": closed_roads + adj}] 
+    new_closed_roads = [{"type": "list<int>", "name": "Closed roads", "value": closed_roads + adj},
+                        {"type": "string", "name": "Id", "value": str(uuid.uuid1())}]
     print("NEW_ROADS_SET =", new_closed_roads)
     return new_closed_roads
 
@@ -292,7 +294,8 @@ async def main():
     # Initial parameter
     # Pedestrian area (Phố đi bộ Hồ Hoàn Kiếm)
     initial_closed_roads = [10, 11, 82, 132, 133, 158, 201, 202, 203, 271, 274, 276, 277, 279, 292, 302, 303, 304, 305, 306, 307, 308, 309, 310, 311, 344, 425, 426, 427, 428, 540, 583, 585, 640]
-    MY_EXP_INIT_PARAMETERS = [{"type": "list<int>", "name": "Closed roads", "value": initial_closed_roads}]
+    MY_EXP_INIT_PARAMETERS = [{"type": "list<int>", "name": "Closed roads", "value": initial_closed_roads},
+                                {"type": "string", "name": "Id", "value": str(uuid.uuid1())}]
     print("Initial closed roads = ", initial_closed_roads)
 
     # Connect to the GAMA server
@@ -302,7 +305,7 @@ async def main():
     # Load the model
     print("Initializing GAMA model")
     experiment_future = asyncio.get_running_loop().create_future()
-    await client.load(GAML_FILE_PATH_ON_SERVER, EXPERIMENT_NAME, True, False, False, True, MY_EXP_INIT_PARAMETERS)
+    await client.load(GAML_FILE_PATH_ON_SERVER, EXPERIMENT_NAME, False, False, False, True, MY_EXP_INIT_PARAMETERS)
     gama_response = await experiment_future
 
     # Get experiment id of the GAMA simulation in the model

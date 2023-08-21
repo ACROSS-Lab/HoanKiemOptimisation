@@ -1,5 +1,6 @@
 import asyncio
 import json
+import uuid
 from typing import Dict
 from asyncio import Future
 
@@ -98,7 +99,8 @@ async def reload_gama_simulation(individual):
     global expression_future, step_future, reload_future
 
     # Update the inital parameters(current_node) to a new parameters (new_params) by merging it with the list of adjacent
-    new_params = [{"type": "list<int>", "name": "Closed roads", "value": [i for i,v in enumerate(individual) if v]}]
+    new_params = [{"type": "list<int>", "name": "Closed roads", "value": [i for i,v in enumerate(individual) if v]},
+                  {"type": "string", "name": "Id", "value": str(uuid.uuid1())}]
     print("NEW_ROADS_SET =", new_params)
     
     # Load the GAMA model with the new parameters
@@ -121,11 +123,11 @@ remain_roads = [x for x in range(643) if x not in PHODIBO]
 
 
 async def cal_fitness(gnome):
-	# Get the AQI for the current set of closed roads (chromosome)
-	max_aqi = await reload_gama_simulation(gnome)
-	# Calculate fitness as the inverse of AQI (lower AQI is better)
-	fitness = 1.0 / max_aqi
-	return fitness
+    # Get the AQI for the current set of closed roads (chromosome)
+    max_aqi = await reload_gama_simulation(gnome)
+    # Calculate fitness as the inverse of AQI (lower AQI is better)
+    fitness = 1.0 / max_aqi
+    return fitness
 
 
 class Individual(object):
@@ -199,113 +201,114 @@ EXPERIMENT_NAME = "exp"
 # Driver code
 async def main():
     
-	global experiment_future
-	global client
-	global experiment_id
+    global experiment_future
+    global client
+    global experiment_id
  
-	# Initial parameter
-	MY_EXP_INIT_PARAMETERS = [{"type": "list<int>", "name": "Closed roads", "value": PHODIBO}]
+    # Initial parameter
+    MY_EXP_INIT_PARAMETERS = [{"type": "list<int>", "name": "Closed roads", "value": PHODIBO},
+                                {"type": "string", "name": "Id", "value": str(uuid.uuid1())}]
 
-	# Connect to the GAMA server
-	client = GamaBaseClient(MY_SERVER_URL, MY_SERVER_PORT, message_handler)
-	await client.connect(ping_interval = None)
+    # Connect to the GAMA server
+    client = GamaBaseClient(MY_SERVER_URL, MY_SERVER_PORT, message_handler)
+    await client.connect(ping_interval = None)
 
-	# Load the model
-	print("Initializing GAMA model")
-	experiment_future = asyncio.get_running_loop().create_future()
-	await client.load(GAML_FILE_PATH_ON_SERVER, EXPERIMENT_NAME, True, False, False, True, MY_EXP_INIT_PARAMETERS)
-	gama_response = await experiment_future
+    # Load the model
+    print("Initializing GAMA model")
+    experiment_future = asyncio.get_running_loop().create_future()
+    await client.load(GAML_FILE_PATH_ON_SERVER, EXPERIMENT_NAME, False, False, False, True, MY_EXP_INIT_PARAMETERS)
+    gama_response = await experiment_future
 
-	# Get experiment id of the GAMA simulation in the model
-	try:
-		experiment_id = gama_response["content"]
-	except Exception as e:
-		print("error while initializing", gama_response, e)
-		return
+    # Get experiment id of the GAMA simulation in the model
+    try:
+        experiment_id = gama_response["content"]
+    except Exception as e:
+        print("error while initializing", gama_response, e)
+        return
     
-	# Start the timer
-	start_time = time.time()
+    # Start the timer
+    start_time = time.time()
     
-	global POPULATION_SIZE
+    global POPULATION_SIZE
  
-	#current generation
-	generation = 1
+    #current generation
+    generation = 1
 
-	found = False
-	population = []
+    found = False
+    population = []
     
     # Initialize variables for tracking generations without significant improvement
-	max_generations_without_improvement = 10
-	generations_without_improvement = 0
-	significant_margin = 10
-	previous_best_fitness = None
+    max_generations_without_improvement = 10
+    generations_without_improvement = 0
+    significant_margin = 10
+    previous_best_fitness = None
  
-	# create initial population
-	for _ in range(POPULATION_SIZE):
-		gnome = Individual.create_gnome()
-		fitness = await cal_fitness(gnome)
-		ind = Individual(gnome, fitness)
-		population.append(ind)
+    # create initial population
+    for _ in range(POPULATION_SIZE):
+        gnome = Individual.create_gnome()
+        fitness = await cal_fitness(gnome)
+        ind = Individual(gnome, fitness)
+        population.append(ind)
 
 
-	while not found:
+    while not found:
 
-		# sort the population in increasing order of fitness score
-		population = sorted(population, key = lambda x:x.fitness)
+        # sort the population in increasing order of fitness score
+        population = sorted(population, key = lambda x:x.fitness)
   
-		# If the best fitness value remains within the significant margin for a number of generations, break the loop
-		if previous_best_fitness is not None and abs(previous_best_fitness - population[0].fitness) <= significant_margin:
-			generations_without_improvement += 1
-		else:
-			generations_without_improvement = 0
+        # If the best fitness value remains within the significant margin for a number of generations, break the loop
+        if previous_best_fitness is not None and abs(previous_best_fitness - population[0].fitness) <= significant_margin:
+            generations_without_improvement += 1
+        else:
+            generations_without_improvement = 0
 
-		if generations_without_improvement >= max_generations_without_improvement:
-			print("No significant improvement for {} generations. Exiting the loop.".format(max_generations_without_improvement))
-			break
+        if generations_without_improvement >= max_generations_without_improvement:
+            print("No significant improvement for {} generations. Exiting the loop.".format(max_generations_without_improvement))
+            break
 
-		# Update the previous best fitness value
-		previous_best_fitness = population[0].fitness
+        # Update the previous best fitness value
+        previous_best_fitness = population[0].fitness
 
-		# Otherwise generate new offsprings for new generation
-		new_generation = []
+        # Otherwise generate new offsprings for new generation
+        new_generation = []
 
-		# Perform Elitism, that mean 10% of fittest population
-		# goes to the next generation
-		s = int((10*POPULATION_SIZE)/100)
-		new_generation.extend(population[:-s])
+        # Perform Elitism, that mean 10% of fittest population
+        # goes to the next generation
+        s = int((10*POPULATION_SIZE)/100)
+        new_generation.extend(population[:-s])
 
-		# From 50% of fittest population, Individuals
-		# will mate to produce offspring
-		s = int((90*POPULATION_SIZE)/100)
-		for _ in range(s):
-			parent1 = random.choice(population[:s])
-			parent2 = random.choice(population[:s])
-			child = await parent1.mate(parent2)
-			new_generation.append(child)
+        # From 50% of fittest population, Individuals
+        # will mate to produce offspring
+        s = int((90*POPULATION_SIZE)/100)
+        for _ in range(s):
+            parent1 = random.choice(population[:s])
+            parent2 = random.choice(population[:s])
+            child = await parent1.mate(parent2)
+            new_generation.append(child)
 
-		population = new_generation
+        population = new_generation
 
-		print("Generation: {}\tRoads Set: {}\tFitness: {}".format(
-		generation,
-		[i for i,v in enumerate(population[0].chromosome) if v],  # Convert integers to strings
-		population[0].fitness
-		))
+        print("Generation: {}\tRoads Set: {}\tFitness: {}".format(
+        generation,
+        [i for i,v in enumerate(population[0].chromosome) if v],  # Convert integers to strings
+        population[0].fitness
+        ))
 
-		generation += 1
+        generation += 1
 
-	
-	print("Generation: {}\tRoads Set: {}\tFitness: {}".format(
-		generation,
-		[i for i,v in enumerate(population[0].chromosome) if v],  # Convert integers to strings
-		population[0].fitness
-	))
+
+    print("Generation: {}\tRoads Set: {}\tFitness: {}".format(
+        generation,
+        [i for i,v in enumerate(population[0].chromosome) if v],  # Convert integers to strings
+        population[0].fitness
+    ))
  
-	await kill_GAMA_simulation(client, experiment_id)
+    await kill_GAMA_simulation(client, experiment_id)
  
-	# End the timer
-	end_time = time.time()
-	total_time = end_time - start_time
-	print("Total time:", total_time, "seconds")
+    # End the timer
+    end_time = time.time()
+    total_time = end_time - start_time
+    print("Total time:", total_time, "seconds")
 
 if __name__ == "__main__":
     asyncio.run(main())

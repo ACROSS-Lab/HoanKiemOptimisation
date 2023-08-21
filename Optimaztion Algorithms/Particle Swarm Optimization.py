@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import uuid
 
 from typing import Dict, List
 from asyncio import Future
@@ -57,19 +58,7 @@ async def run_GAMA_simulation(client, experiment_id):
     if gama_response["type"] != MessageTypes.CommandExecutedSuccessfully.value:
         print("Unable to execute the experiment", gama_response)
         return
-    
-    # screenshoting
-    # dir = str(Path(__file__).parents[0] / " Greedy Result ")
-    # os.makedirs(dir, exist_ok=True)
-    # name = "-".join([str(road) for road in closed_roads]) + ".png"
-    # print("Saving a screenshot to", dir, name)
-    # take_snapshot_command = r"save snapshot('my_display') to:'" + dir.replace('\\', '/') + "/" + name + "';"
-    # expression_future = asyncio.get_running_loop().create_future()
-    # await client.expression(experiment_id, take_snapshot_command)
-    # gama_response = await expression_future
-    # if gama_response["type"] != MessageTypes.CommandExecutedSuccessfully.value:
-    #     print("Unable to save the display", gama_response)
-    #     return
+
 
 
 async def kill_GAMA_simulation(client, experiment_id):
@@ -93,13 +82,19 @@ async def get_max_aqi(client, experiment_id):
     return float(gama_response["content"])     
 
 
+# Roads belonging to the initial solution
 PHODIBO = [10, 11, 82, 132, 133, 158, 201, 202, 203, 271, 274, 276, 277, 279, 292, 302, 303, 304, 305, 306, 307, 308, 309, 310, 311, 344, 425, 426, 427, 428, 540, 583, 585, 640]
-PHODIBO_BOOLEAN = [True] * len(PHODIBO)
-remain_roads = [x for x in range(643) if x not in PHODIBO]
+
+# Total number of roads in the simulation
+total_nb_road = 643
+
+# Probability for a road to be closed in the initial swarm
+# it will roughly correspond to the percentage of closed roads in the initial swarm
+proba_closed_at_init = 0.1
 
 
 class Particle:
-    def __init__(self, position, velocity, fitness = 0):
+    def __init__(self, position, velocity, fitness=0.0):
         self.position = position
         self.velocity = velocity
         self.bestPos = position
@@ -109,14 +104,15 @@ class Particle:
 async def initialize_swarm(N):
     swarm = []
     for _ in range(N):
+
         # Create a list of random boolean values, representing whether roads are closed or not
-        roads_to_opt = [random.choice([True, False]) for _ in range(len(remain_roads))]
+        roads_to_opt = [random.uniform(0.0, 1.0) < proba_closed_at_init for _ in range(total_nb_road)]
 
         # Combine PHODIBO with the randomly selected roads to form the particle's position
-        position = PHODIBO_BOOLEAN + roads_to_opt
+        position = [selected or i in PHODIBO for i, selected in enumerate(roads_to_opt)]
+
         velocity = [random.uniform(-1, 1) for _ in range(len(position))]
-        
-        #TODO evaluate the particule to get its fitness
+
         fitness = await evaluate_fitness(position)
         
         particle = Particle(position, velocity, fitness)
@@ -134,8 +130,8 @@ async def pso_optimization(max_iter, N, num_roads, w_start, w_end, c1, c2):
 
     for iteration in range(max_iter):
         w = w_start - (w_start - w_end) * (iteration / max_iter)
-        for i in range(N):
-            particle = swarm[i]
+
+        for particle in swarm:
 
             # Update velocity for each road to close
             for r in range(num_roads):
@@ -173,8 +169,12 @@ async def pso_optimization(max_iter, N, num_roads, w_start, w_end, c1, c2):
 
 async def evaluate_fitness(position):
     global expression_future, step_future, reload_future
+
+    id = str(uuid.uuid1())
+
     # Update the inital parameters(current_node) to a new parameters (new_params) by merging it with the list of adjacent
-    new_params = [{"type": "list<int>", "name": "Closed roads", "value": [i for i,v in enumerate(position) if v]}]
+    new_params = [{"type": "list<int>", "name": "Closed roads", "value": [i for i, v in enumerate(position) if v]},
+                  {"type": "string", "name": "Id", "value": id}]
     print("NEW_ROADS_SET =", new_params)
     
     # Load the GAMA model with the new parameters
@@ -186,7 +186,22 @@ async def evaluate_fitness(position):
         return
 
     await run_GAMA_simulation(client, experiment_id)
-    return (1 / await get_max_aqi(client, experiment_id))  
+
+    # # screenshoting
+    # dir = str(Path(__file__).parents[1] / "Hoan Kiem Air Model" / "models" / "HKAM Data")
+    # os.makedirs(dir, exist_ok=True)
+    # name = id + ".png"
+    # print("Saving a screenshot to", dir, name)
+    # take_snapshot_command = r"save snapshot(world, 'my_display', {1000,1000}) to:'" + dir.replace('\\', '/') + "/" + name + "';"
+    # expression_future = asyncio.get_running_loop().create_future()
+    # print("expression", take_snapshot_command)
+    # await client.expression(experiment_id, take_snapshot_command)
+    # gama_response = await expression_future
+    # if gama_response["type"] != MessageTypes.CommandExecutedSuccessfully.value:
+    #     print("Unable to save the display", gama_response)
+    #     return
+
+    return 1.0 / await get_max_aqi(client, experiment_id)
 
 
 # Experiment and Gama-server constants
@@ -212,16 +227,17 @@ async def main():
     global experiment_id
 
     # Initial parameter
-    MY_EXP_INIT_PARAMETERS = [{"type": "list<int>", "name": "Closed roads", "value": PHODIBO}]
+    MY_EXP_INIT_PARAMETERS = [{"type": "list<int>", "name": "Closed roads", "value": PHODIBO},
+                              {"type": "string", "name": "Id", "value": "initial simulation"}]
 
     # Connect to the GAMA server
     client = GamaBaseClient(MY_SERVER_URL, MY_SERVER_PORT, message_handler)
-    await client.connect(ping_interval = None)
+    await client.connect(ping_interval = 30)
 
     # Load the model
     print("initialize a gaml model")
     experiment_future = asyncio.get_running_loop().create_future()
-    await client.load(GAML_FILE_PATH_ON_SERVER, EXPERIMENT_NAME, True, False, False, True, MY_EXP_INIT_PARAMETERS)
+    await client.load(GAML_FILE_PATH_ON_SERVER, EXPERIMENT_NAME, False, False, False, True, MY_EXP_INIT_PARAMETERS)
     gama_response = await experiment_future
 
     # Get experiment id of the GAMA simulation in the model

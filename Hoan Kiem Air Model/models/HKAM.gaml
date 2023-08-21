@@ -13,6 +13,7 @@ global
 	float step <- 15#s;
 	float max_aqi;
 	float min_aqi;
+	string simulation_id;
 	
 	// Load shapefiles
 	string resources_dir <- "../includes/bigger_map/";
@@ -32,7 +33,11 @@ global
 	init 
 	{		
 		create road from: roads_shape_file {}
-		
+
+		write n_cars;
+		write n_motorbikes;
+        write closed_roads;
+
 		open_roads <- list(road);
 		map<road, float> road_weights <- road as_map (each::each.shape.perimeter); 
 		road_network <- as_edge_graph(road) with_weights road_weights;
@@ -201,23 +206,43 @@ global
 			aqi <- pollutant_cell(p_cell).aqi;
 		}
 	}
-	
-	reflex save_results when: ( time > 0 )and every(4 #cycle) {
-		save 
+
+    string simulation_register_file_path <- "/HKAM Data/Simulations.txt";
+    reflex register_simulation when:cycle=0 {
+         // if the file doesn't exist yet, we create the header manually
+		if not file_exists(simulation_register_file_path) {
+		    save "simulation_id;nb_closed_roads;closed roads" 
+		    	to: simulation_register_file_path format:text;
+		}
+
+
+		// we fill in the simulation's data
+        save "" + simulation_id         + ";"
+                + length(closed_roads)  + ";"
+                + closed_roads
+             to: simulation_register_file_path format:text rewrite:false;
+
+    }
+
+
+	string data_file_path <- "/HKAM Data/SavedData.txt";
+	reflex save_results when: every(20 #cycle) {
+	    // if the file doesn't exist yet, we create the header manually
+		if not file_exists(data_file_path) {
+		    save "simulation_id;cycle;max_aqi" to: data_file_path format:text;
+		}
+		save
 		(
-			"nb_closed_roads"   +   length(closed_roads)	+ ": " +
-			"closed roads: " 	+ 	string(closed_roads) 	+ "; " +
-			"cycle: " 			+ 	string(cycle) 			+ "; " + 
-			"max_aqi: " 		+ 	max_aqi
+			""  + simulation_id	+ ";"
+			    + cycle         + ";"
+			    + max_aqi
 		) 
-		to: "/HKAM Data/SavedData.txt" format: text rewrite: false;
-		
-//		save [closed_roads, cycle, max_aqi, mean_aqi] to: "/results/Greedydata.csv" format: "csv" rewrite: false header: true  ;
-	} 
+		to: data_file_path format: text rewrite: false;
+	}
 	
-	reflex benchmark when: benchmark and every(4 #cycle) {
+//	reflex benchmark when: benchmark and every(20 #cycle) {
 //		float start <- machine_time;
-		write "AQI: " + max_aqi;
+//		write "AQI: " + max_aqi;
 		
 //		time_per_4cycles <- machine_time - start;
 //		write "time per 4cycles: " + time_per_4cycles;
@@ -229,7 +254,7 @@ global
 		
 //		write length(open_roads);
 //		write length(road);
-	}
+//	}
 }
 
 
@@ -238,7 +263,8 @@ experiment exp autorun: false{
 	parameter "Number of cars" var: n_cars <- 75 min: 75 max: 500;
 	parameter "Refreshing time plot" var: refreshing_rate_plot init: 1#mn min:1#mn max: 1#h;
 	parameter "Closed roads" var: closed_roads <- [10, 11, 82, 132, 133, 158, 201, 202, 203, 271, 274, 276, 277, 279, 292, 302, 303, 304, 305, 306, 307, 308, 309, 310, 311, 344, 425, 426, 427, 428, 540, 583, 585, 640];
-	parameter "Display mode" var:display_mode <- true;
+	parameter "Display mode" var:display_mode <- false;
+	parameter "Id" var:simulation_id <- "" + closed_roads;
 	
 	
 //	reflex save_simulation when: every(4 #cycle) {	

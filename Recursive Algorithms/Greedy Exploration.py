@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import time
+import uuid
 from datetime import datetime
 from typing import Dict, List
 from asyncio import Future
@@ -177,7 +178,8 @@ async def child_node(client: GamaBaseClient, experiment_id, current_node: Node, 
     #sorting
     new_closed_roads.sort()
 
-    new_params = [{"type": "list<int>", "name": "Closed roads", "value": new_closed_roads}]
+    new_params = [{"type": "list<int>", "name": "Closed roads", "value": new_closed_roads},
+                  {"type": "string", "name": "Id", "value": str(uuid.uuid1())}]
     print("NEW_ROADS_SET =", new_params)
 
     # Load the GAMA model with the new parameters
@@ -256,7 +258,8 @@ async def main():
     # Pedestrian area (Phố đi bộ Hồ Hoàn Kiếm)
     root_node = [10, 11, 82, 132, 133, 158, 201, 202, 203, 271, 274, 276, 277, 279, 292, 302, 303, 304, 305, 306, 307, 308, 309, 310, 311, 344, 425, 426, 427, 428, 540, 583, 585, 640]
     print("Initial closed roads = ", root_node)
-    MY_EXP_INIT_PARAMETERS = [{"type": "list<int>", "name": "Closed roads", "value": root_node}]
+    MY_EXP_INIT_PARAMETERS = [  {"type": "list<int>", "name": "Closed roads", "value": root_node},
+                                {"type": "string", "name": "Id", "value": str(uuid.uuid1())}]
     root = Node(root_node)
 
     # Connect to the GAMA server
@@ -269,7 +272,7 @@ async def main():
     # Load the model
     print("Initializing GAMA model")
     experiment_future = asyncio.get_running_loop().create_future()
-    await client.load(GAML_FILE_PATH_ON_SERVER, EXPERIMENT_NAME, True, False, False, True, MY_EXP_INIT_PARAMETERS)
+    await client.load(GAML_FILE_PATH_ON_SERVER, EXPERIMENT_NAME, False, False, False, True, MY_EXP_INIT_PARAMETERS)
     gama_response = await experiment_future
 
     # Get experiment id of the GAMA simulation in the model
