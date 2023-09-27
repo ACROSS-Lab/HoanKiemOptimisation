@@ -10,7 +10,7 @@ global
 	float time_per_4cycles;
 	bool benchmark <- true;
 	bool closed <- false;
-	float step <- 15#s;
+	float step <- 5#minute;
 	float max_aqi;
 	float min_aqi;
 	string simulation_id;
@@ -24,19 +24,34 @@ global
 	shape_file naturals_shape_file <- shape_file(resources_dir + "naturals.shp");
 	shape_file buildings_admin_shape_file <- shape_file(resources_dir + "buildings_admin.shp");
 	
+	
 	geometry shape <- envelope(buildings_shape_file);
 	list<road> open_roads;
 	list<int> closed_roads;
 	list<pollutant_cell> active_cells;
 
+	string file_to_save <- copy_between(experiment.name, 0, length(experiment.name)-1) + " - " + n_motorbikes + " - " + n_cars + ".csv";
+	int last_cycle <- round(2#day/step);
+	
+	reflex saving  when:cycle=last_cycle{
+		save [max_aqi, mean(pollutant_cell collect each.aqi)] to:file_to_save format:csv rewrite:false;
+		//empty memory at the end of the simulation
+		ask experiment {
+			do compact_memory;			
+		}
+	}
 
 	init 
 	{		
+		
 		create road from: roads_shape_file {}
-
 		write n_cars;
 		write n_motorbikes;
         write closed_roads;
+		//empty memory at the end of the simulation
+		ask experiment {
+			do compact_memory;			
+		}
 
 		open_roads <- list(road);
 		map<road, float> road_weights <- road as_map (each::each.shape.perimeter); 
@@ -207,38 +222,38 @@ global
 		}
 	}
 
-    string simulation_register_file_path <- "/HKAM Data/Simulations.txt";
-    reflex register_simulation when:cycle=0 {
-         // if the file doesn't exist yet, we create the header manually
-		if not file_exists(simulation_register_file_path) {
-		    save "simulation_id;nb_closed_roads;closed roads" 
-		    	to: simulation_register_file_path format:text;
-		}
-
-
-		// we fill in the simulation's data
-        save "" + simulation_id         + ";"
-                + length(closed_roads)  + ";"
-                + closed_roads
-             to: simulation_register_file_path format:text rewrite:false;
-
-    }
-
-
-	string data_file_path <- "/HKAM Data/SavedData.txt";
-	reflex save_results when: every(20 #cycle) {
-	    // if the file doesn't exist yet, we create the header manually
-		if not file_exists(data_file_path) {
-		    save "simulation_id;cycle;max_aqi" to: data_file_path format:text;
-		}
-		save
-		(
-			""  + simulation_id	+ ";"
-			    + cycle         + ";"
-			    + max_aqi
-		) 
-		to: data_file_path format: text rewrite: false;
-	}
+//    string simulation_register_file_path <- "/HKAM Data/Simulations.txt";
+//    reflex register_simulation when:cycle=0 {
+//         // if the file doesn't exist yet, we create the header manually
+//		if not file_exists(simulation_register_file_path) {
+//		    save "simulation_id;nb_closed_roads;closed roads" 
+//		    	to: simulation_register_file_path format:text;
+//		}
+//
+//
+//		// we fill in the simulation's data
+//        save "" + simulation_id         + ";"
+//                + length(closed_roads)  + ";"
+//                + closed_roads
+//             to: simulation_register_file_path format:text rewrite:false;
+//
+//    }
+//
+//
+//	string data_file_path <- "/HKAM Data/SavedData.txt";
+//	reflex save_results when: every(20 #cycle) {
+//	    // if the file doesn't exist yet, we create the header manually
+//		if not file_exists(data_file_path) {
+//		    save "simulation_id;cycle;max_aqi" to: data_file_path format:text;
+//		}
+//		save
+//		(
+//			""  + simulation_id	+ ";"
+//			    + cycle         + ";"
+//			    + max_aqi
+//		) 
+//		to: data_file_path format: text rewrite: false;
+//	}
 	
 //	reflex benchmark when: benchmark and every(20 #cycle) {
 //		float start <- machine_time;
@@ -319,6 +334,27 @@ experiment ReloadSavedSims type: gui {
 	}
 }
 
+
+experiment minimal_closure type:batch repeat:32 until:cycle=last_cycle+1 parallel:6 keep_simulations:false {
+	
+	parameter "Number of motorbikes" var: n_motorbikes <- 1500;
+	parameter "Number of cars" var: n_cars <- 500;
+	parameter "Closed roads" var: closed_roads <- [10, 11, 82, 132, 133, 158, 201, 202, 203, 271, 274, 276, 277, 279, 292, 302, 303, 304, 305, 306, 307, 308, 309, 310, 311, 344, 425, 426, 427, 428, 540, 583, 585, 640];
+	
+	
+}
+
+
+
+
+experiment nothing_closed type:batch repeat:100 until:cycle=last_cycle+1 parallel:6 keep_simulations:false {
+	
+	parameter "Number of motorbikes" var: n_motorbikes <- 1500;
+	parameter "Number of cars" var: n_cars <- 500;
+	parameter "Closed roads" var: closed_roads <- [];
+
+	
+}
 
 
 
