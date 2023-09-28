@@ -53,7 +53,7 @@ async def run_GAMA_simulation(client, experiment_id):
     print("Running the experiment")
      # Run the GAMA simulation for n + 2 steps
     step_future = asyncio.get_running_loop().create_future()
-    await client.step(experiment_id, 11520 + 2, True)
+    await client.step(experiment_id, 60 + 2, True)
     gama_response = await step_future
     if gama_response["type"] != MessageTypes.CommandExecutedSuccessfully.value:
         print("Unable to execute the experiment", gama_response)
@@ -78,12 +78,15 @@ async def get_max_aqi(client, experiment_id):
     expression_future = asyncio.get_running_loop().create_future()
     await client.expression(experiment_id, r"max_aqi")
     gama_response = await expression_future
-    print("MAX_AQI =", gama_response["content"])
+    print("AQI =", gama_response["content"])
     return float(gama_response["content"])     
 
 
 # Roads belonging to the initial solution
-PHODIBO = [10, 11, 82, 132, 133, 158, 201, 202, 203, 271, 274, 276, 277, 279, 292, 302, 303, 304, 305, 306, 307, 308, 309, 310, 311, 344, 425, 426, 427, 428, 540, 583, 585, 640]
+PhoDiBo_2023 = [0, 1, 2, 3, 6, 7, 8, 10, 11, 12, 13, 23, 24, 25, 26, 27, 28, 29, 82, 132, 133, 146, 158, 195, 196, 197, 198, 201, 202, 203, 215, 216, 217, 218, 219, 220, 221, 222, 271, 274, 276, 277, 279, 302, 303, 304, 305, 306, 307, 308, 309, 310, 311, 315, 317, 318, 319, 320, 344, 346, 359, 360, 361, 362, 391, 397, 425, 426, 427, 428, 482, 483, 485, 540, 585, 640]
+
+ROAD_CANT_CLOSE =  [30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 49, 97, 98, 174, 207, 208, 209, 210, 211, 212, 213, 214, 312, 313, 321, 322, 323, 324, 325, 326, 327, 328, 329, 330, 331, 332, 333, 334, 335, 336, 337, 377, 378, 379, 380, 381, 382, 383, 384, 385, 386, 387, 388, 389, 390, 409, 414, 415, 416, 417, 418, 
+419, 420, 421, 431, 432, 433, 434, 435, 436, 437, 438, 439, 440, 441, 442, 445, 446, 451, 452, 453, 454, 455, 456, 457, 487, 488, 489, 519, 523, 524, 525, 526, 527, 528, 529, 531, 532, 533, 534, 535, 541, 544, 545, 546, 547, 548, 549, 586, 587, 588, 589, 590, 591, 592, 598, 599, 600, 601, 602, 616, 617, 631, 632, 633, 634, 635, 636, 641, 642]
 
 # Total number of roads in the simulation
 total_nb_road = 643
@@ -109,7 +112,7 @@ async def initialize_swarm(N):
         roads_to_opt = [random.uniform(0.0, 1.0) < proba_closed_at_init for _ in range(total_nb_road)]
 
         # Combine PHODIBO with the randomly selected roads to form the particle's position
-        position = [selected or i in PHODIBO for i, selected in enumerate(roads_to_opt)]
+        position = [selected or i in PhoDiBo_2023 for i, selected in enumerate(roads_to_opt)]
 
         velocity = [random.uniform(-1, 1) for _ in range(len(position))]
 
@@ -148,6 +151,8 @@ async def pso_optimization(max_iter, N, num_roads, w_start, w_end, c1, c2):
                     particle.position[r] = particle.position[r]
                 else:
                     particle.position[r] = not particle.position[r]
+                if r in ROAD_CANT_CLOSE:
+                    particle.position[r] = False
             
             # Evaluate fitness (in this case, the air quality index) of the new position
             fitness = await evaluate_fitness(particle.position)
@@ -207,7 +212,7 @@ async def evaluate_fitness(position):
 # Experiment and Gama-server constants
 MY_SERVER_URL = "localhost"
 MY_SERVER_PORT = 6868
-GAML_FILE_PATH_ON_SERVER = str(Path(__file__).parents[1] / "Hoan Kiem Air Model" / "models" / "HKAM.gaml" ).replace('\\','/')
+GAML_FILE_PATH_ON_SERVER = r"C:/Code Stuff/HKAM/models/HKAM.gaml"
 EXPERIMENT_NAME = "exp"
 
 
@@ -227,12 +232,12 @@ async def main():
     global experiment_id
 
     # Initial parameter
-    MY_EXP_INIT_PARAMETERS = [{"type": "list<int>", "name": "Closed roads", "value": PHODIBO},
+    MY_EXP_INIT_PARAMETERS = [{"type": "list<int>", "name": "Closed roads", "value": PhoDiBo_2023},
                               {"type": "string", "name": "Id", "value": "initial simulation"}]
 
     # Connect to the GAMA server
     client = GamaBaseClient(MY_SERVER_URL, MY_SERVER_PORT, message_handler)
-    await client.connect(ping_interval = 30)
+    await client.connect(ping_interval = None)
 
     # Load the model
     print("initialize a gaml model")
