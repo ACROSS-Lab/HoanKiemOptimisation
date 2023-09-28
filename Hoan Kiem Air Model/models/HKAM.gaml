@@ -12,6 +12,7 @@ global
 	bool closed <- false;
 	float step <- 5#minute;
 	float max_aqi;
+	list<float> means <- [];
 	float min_aqi;
 	string simulation_id;
 	
@@ -34,7 +35,7 @@ global
 	int last_cycle <- round(2#day/step);
 	
 	reflex saving  when:cycle=last_cycle{
-		save [max_aqi, mean(pollutant_cell collect each.aqi)] to:file_to_save format:csv rewrite:false;
+		save [max_aqi, mean(means)] to:file_to_save format:csv rewrite:false;
 		//empty memory at the end of the simulation
 		ask experiment {
 			do compact_memory;			
@@ -199,6 +200,12 @@ global
 		diffuse var: nox on: pollutant_cell matrix: mat_diff;
 		diffuse var: so2 on: pollutant_cell matrix: mat_diff;
 		diffuse var: pm on: pollutant_cell matrix: mat_diff;
+		
+		//gather data for saving
+		let aqis <- pollutant_cell accumulate each.aqi;
+		max_aqi <- max(max_aqi, max(aqis));
+		add mean(aqis) to:means;
+		
 	}
 	
 	
@@ -206,7 +213,6 @@ global
 	//every(1 #cycle) { 
 	//every(1 #minute) {
 	every(refreshing_rate_plot) {
-		max_aqi <- max(pollutant_cell accumulate each.aqi);
 		ask line_graph_aqi {
 		 	do update(max_aqi);
 		 }
@@ -277,10 +283,13 @@ experiment exp autorun: false{
 	parameter "Number of motorbikes" var: n_motorbikes <- 200 min: 0 max: 1500;
 	parameter "Number of cars" var: n_cars <- 75 min: 75 max: 500;
 	parameter "Refreshing time plot" var: refreshing_rate_plot init: 1#mn min:1#mn max: 1#h;
-	parameter "Closed roads" var: closed_roads <- [10, 11, 82, 132, 133, 158, 201, 202, 203, 271, 274, 276, 277, 279, 292, 302, 303, 304, 305, 306, 307, 308, 309, 310, 311, 344, 425, 426, 427, 428, 540, 583, 585, 640];
+	//parameter "Closed roads" var: closed_roads <- [10, 11, 82, 132, 133, 158, 201, 202, 203, 271, 274, 276, 277, 279, 292, 302, 303, 304, 305, 306, 307, 308, 309, 310, 311, 344, 425, 426, 427, 428, 540, 583, 585, 640];
 	parameter "Display mode" var:display_mode <- false;
 	parameter "Id" var:simulation_id <- "" + closed_roads;
 	
+
+	parameter "Closed roads" var: closed_roads <- range(643) where !(int(each) in [30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 49, 97, 98, 174, 207, 208, 209, 210, 211, 212, 213, 214, 312, 313, 321, 322, 323, 324, 325, 326, 327, 328, 329, 330, 331, 332, 333, 334, 335, 336, 337, 377, 378, 379, 380, 381, 382, 383, 384, 385, 386, 387, 388, 389, 390, 409, 414, 415, 416, 417, 418, 419, 420, 421, 431, 432, 433, 434, 435, 436, 437, 438, 439, 440, 441, 442, 445, 446, 451, 452, 453, 454, 455, 456, 457, 487, 488, 489, 519, 523, 524, 525, 526, 527, 528, 529, 531, 532, 533, 534, 535, 541, 544, 545, 546, 547, 548, 549, 586, 587, 588, 589, 590, 591, 592, 598, 599, 600, 601, 602, 616, 617, 631, 632, 633, 634, 635, 636, 641, 642])
+													    collect int(each);
 	
 //	reflex save_simulation when: every(4 #cycle) {	
 //		write "Save of simulation : " + save_simulation('/HKAM Data/StoredSimulations.gsim');				
@@ -289,7 +298,6 @@ experiment exp autorun: false{
 	output{
 		display my_display type: 3d background: #black axes:false{
 			species boundary;			
-			species vehicle;
 			species road;
 			species natural;
 			species building;
@@ -303,6 +311,7 @@ experiment exp autorun: false{
 	   //	species line_graph;
 			species line_graph_aqi;
 			species indicator_health_concern_level;
+			species vehicle;
 		}
 	}
 }
@@ -355,6 +364,28 @@ experiment nothing_closed type:batch repeat:100 until:cycle=last_cycle+1 paralle
 
 	
 }
+
+
+
+experiment current_pedestrian_closed type:batch repeat:100 until:cycle=last_cycle+1 parallel:6 keep_simulations:false {
+	
+	parameter "Number of motorbikes" var: n_motorbikes <- 1500;
+	parameter "Number of cars" var: n_cars <- 500;
+	parameter "Closed roads" var: closed_roads <-  [0, 1, 2, 3, 6, 7, 8, 10, 11, 12, 13, 23, 24, 25, 26, 27, 28, 29, 82, 132, 133, 146, 158, 195, 196, 197, 198, 201, 202, 203, 215, 216, 217, 218, 219, 220, 221, 222, 271, 274, 276, 277, 279, 302, 303, 304, 305, 306, 307, 308, 309, 310, 311, 315, 317, 318, 319, 320, 344, 346, 359, 360, 361, 362, 391, 397, 425, 426, 427, 428, 482, 483, 485, 540, 585, 640];
+
+}
+
+
+experiment everything_closed type:batch repeat:100 until:cycle=last_cycle+1 parallel:6 keep_simulations:false {
+	
+	parameter "Number of motorbikes" var: n_motorbikes <- 1500;
+	parameter "Number of cars" var: n_cars <- 500;
+	parameter "Closed roads" var: closed_roads <- range(643) where !(int(each) in [30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 49, 97, 98, 174, 207, 208, 209, 210, 211, 212, 213, 214, 312, 313, 321, 322, 323, 324, 325, 326, 327, 328, 329, 330, 331, 332, 333, 334, 335, 336, 337, 377, 378, 379, 380, 381, 382, 383, 384, 385, 386, 387, 388, 389, 390, 409, 414, 415, 416, 417, 418, 419, 420, 421, 431, 432, 433, 434, 435, 436, 437, 438, 439, 440, 441, 442, 445, 446, 451, 452, 453, 454, 455, 456, 457, 487, 488, 489, 519, 523, 524, 525, 526, 527, 528, 529, 531, 532, 533, 534, 535, 541, 544, 545, 546, 547, 548, 549, 586, 587, 588, 589, 590, 591, 592, 598, 599, 600, 601, 602, 616, 617, 631, 632, 633, 634, 635, 636, 641, 642])
+													    collect int(each);
+	
+	
+}
+
 
 
 
