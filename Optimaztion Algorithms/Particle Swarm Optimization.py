@@ -222,7 +222,7 @@ async def evaluate_fitness(position):
     #     print("Unable to save the display", gama_response)
     #     return
 
-    return 1.0 / await get_max_aqi(client, experiment_id)
+    return await get_max_aqi(client, experiment_id)
 
 
 # Experiment and Gama-server constants
