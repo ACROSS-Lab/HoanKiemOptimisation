@@ -191,9 +191,17 @@ async def pso_optimization():
 
     swarm = await initialize_swarm(N)
 
-    fitness_list = [p.bestFitness for p in swarm]
-    best_fitness_swarm = min(fitness_list)
-    best_pos_swarm = swarm[fitness_list.index(best_fitness_swarm)].position
+    best_fitness_swarm = float("inf")
+    best_pos_swarm = None
+
+    print("whole swarm summary")
+    for particle in swarm:
+        print(particle.description(), particle.bestFitness)
+        # Update global best
+        if particle.bestFitness < best_fitness_swarm:
+            best_fitness_swarm = particle.bestFitness
+            best_pos_swarm = particle.position
+    print("current best fitness:", best_fitness_swarm, ",closed roads:", [i for i, v in enumerate(best_pos_swarm) if v])
 
     for iteration in range(max_iter):
 
@@ -216,7 +224,7 @@ async def pso_optimization():
             if fitness < best_fitness_swarm:
                 best_fitness_swarm = fitness
                 best_pos_swarm = particle.position
-        print("current best fitness:", best_fitness_swarm, ",closed roads:", [i for i, v in best_pos_swarm if v])
+        print("current best fitness:", best_fitness_swarm, ",closed roads:", [i for i, v in enumerate(best_pos_swarm) if v])
 
     # Return best particle of the swarm
     best_particle = min(swarm, key=lambda particle: particle.bestFitness)
@@ -267,8 +275,8 @@ GAML_FILE_PATH_ON_SERVER = str(Path(__file__).parents[1] / "Hoan Kiem Air Model"
 EXPERIMENT_NAME = "parallel"
 
 
-max_iter = 1000
-N = 20
+max_iter = 100
+N = 7
 num_roads = 643
 c1 = 2
 c2 = 2
