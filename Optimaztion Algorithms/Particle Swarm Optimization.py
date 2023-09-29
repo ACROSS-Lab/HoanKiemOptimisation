@@ -180,8 +180,8 @@ async def pso_optimization(max_iter, N, num_roads, w_start, w_end, c1, c2):
 
         print("whole swarm summary")
         for p in swarm:
-            print(p.position, p.bestFitness)
-        print("current best fitness:", best_fitness_swarm, ",closed roads:", best_pos_swarm)
+            print("[" + ", ".join([str(i) for i, v in enumerate(p.position) if v]) + "]", p.bestFitness)
+        print("current best fitness:", best_fitness_swarm, ",closed roads:",  [i for i, v in enumerate(best_pos_swarm) if v])
 
     # Return best particle of the swarm
     best_particle = min(swarm, key=lambda particle: particle.bestFitness)
@@ -232,8 +232,8 @@ GAML_FILE_PATH_ON_SERVER = str(Path(__file__).parents[1] / "Hoan Kiem Air Model"
 EXPERIMENT_NAME = "exp"
 
 
-max_iter = 1000
-N = 20
+max_iter = 100
+N = 7
 num_roads = 643
 c1 = 2
 c2 = 2
