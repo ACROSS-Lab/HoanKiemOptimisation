@@ -14,41 +14,42 @@ from gama_client.base_client import GamaBaseClient
 from gama_client.command_types import CommandTypes
 from gama_client.message_types import MessageTypes
 
-experiment_future: Future
+experiment_ids: List[str]
+experiment_futures: List[Future]
 play_future: Future
 pause_future: Future
-expression_future: Future
-step_future: Future
+expression_futures: Dict[str, Future] = {}
+step_futures: Dict[str, Future] = {}
 stop_future: Future
-reload_future: Future
+reload_futures: Dict[str, Future] = {}
 
-# # To run parallel code, source: https://stackoverflow.com/a/59385935
-# import nest_asyncio
-# nest_asyncio.apply()
-#
-# def background(f):
-#     def wrapped(*args, **kwargs):
-#         return asyncio.get_event_loop().run_in_executor(None, f, *args, **kwargs)
-#
-#     return wrapped
+# To run parallel code, source: https://stackoverflow.com/a/59385935
+import nest_asyncio
+nest_asyncio.apply()
+
+def background(f):
+    def wrapped(*args, **kwargs):
+        return asyncio.get_event_loop().run_in_executor(None, f, *args, **kwargs)
+
+    return wrapped
 
 async def message_handler(message):
     # print("received message:", message)
     if "command" in message:
         if message["command"]["type"] == CommandTypes.Load.value:
-            experiment_future.set_result(message)
+            experiment_futures[message["command"]["id"]].set_result(message)
         elif message["command"]["type"] == CommandTypes.Play.value:
             play_future.set_result(message)
         elif message["command"]["type"] == CommandTypes.Pause.value:
             pause_future.set_result(message)
         elif message["command"]["type"] == CommandTypes.Expression.value:
-            expression_future.set_result(message)
+            expression_futures[message["command"]["exp_id"]].set_result(message)
         elif message["command"]["type"] == CommandTypes.Step.value:
-            step_future.set_result(message)
+            step_futures[message["command"]["exp_id"]].set_result(message)
         elif message["command"]["type"] == CommandTypes.Stop.value:
             stop_future.set_result(message)
         elif message["command"]["type"] == CommandTypes.Reload.value:
-            reload_future.set_result(message)
+            reload_futures[message["command"]["exp_id"]].set_result(message)
             
             
 async def run_GAMA_simulation(client, experiment_id):
@@ -58,11 +59,10 @@ async def run_GAMA_simulation(client, experiment_id):
     # 5760 steps = 1 day 
     # 11520 steps = 1 weekend 
     # 40320 steps = 1 week
-    global step_future
-     # Run the GAMA simulation for n + 2 steps
-    step_future = asyncio.get_running_loop().create_future()
+    global step_futures
+    step_futures[experiment_id] = asyncio.get_running_loop().create_future()
     await client.step(experiment_id, 48*12, True)
-    gama_response = await step_future
+    gama_response = await step_futures[experiment_id]
     if gama_response["type"] != MessageTypes.CommandExecutedSuccessfully.value:
         print("Unable to execute the experiment", gama_response)
         return
@@ -82,10 +82,10 @@ async def kill_GAMA_simulation(client, experiment_id):
   
   
 async def get_max_aqi(client, experiment_id):
-    global expression_future
-    expression_future = asyncio.get_running_loop().create_future()
+    global expression_futures
+    expression_futures[experiment_id] = asyncio.get_running_loop().create_future()
     await client.expression(experiment_id, r"max_aqi")
-    gama_response = await expression_future
+    gama_response = await expression_futures[experiment_id]
     print("AQI =", gama_response["content"])
     return float(gama_response["content"])     
 
@@ -111,27 +111,84 @@ class Particle:
         self.bestPos = position
         self.bestFitness = fitness
 
+    def description(self) -> str:
+        return "[" + ", ".join([str(i) for i, v in enumerate(self.position) if v]) + "]"
+
+@background
+async def internal_initialize_swarm(i):
+
+    # Initial parameter
+    MY_EXP_INIT_PARAMETERS = [{"type": "list<int>", "name": "Closed roads", "value": PhoDiBo_2023},
+                              {"type": "string", "name": "Id", "value": "initial simulation"}]
+    await client.load(GAML_FILE_PATH_ON_SERVER, EXPERIMENT_NAME, False, False, False, True, MY_EXP_INIT_PARAMETERS, additional_data={"id":i})
+    gama_response = await experiment_futures[i]
+
+    # Get experiment id of the GAMA simulation in the model
+    try:
+        experiment_ids[i] = gama_response["content"]
+    except Exception as e:
+        print("error while initializing", gama_response, e)
+        return
+
+    # Create a list of random boolean values, representing whether roads are closed or not
+    roads_to_opt = [random.uniform(0.0, 1.0) < proba_closed_at_init for _ in range(total_nb_road)]
+
+    # Combine PHODIBO with the randomly selected roads to form the particle's position
+    position = [selected or i in PhoDiBo_2023 for i, selected in enumerate(roads_to_opt)]
+
+    velocity = [random.uniform(-1, 1) for _ in range(len(position))]
+
+    fitness = await evaluate_fitness(position, experiment_ids[i])
+
+    particle = Particle(position, velocity, fitness)
+    return particle
 
 async def initialize_swarm(N):
-    swarm = []
-    for i in range(N):
-        # Create a list of random boolean values, representing whether roads are closed or not
-        roads_to_opt = [random.uniform(0.0, 1.0) < proba_closed_at_init for _ in range(total_nb_road)]
 
-        # Combine PHODIBO with the randomly selected roads to form the particle's position
-        position = [selected or i in PhoDiBo_2023 for i, selected in enumerate(roads_to_opt)]
+    global experiment_futures
 
-        velocity = [random.uniform(-1, 1) for _ in range(len(position))]
+    experiment_futures = [asyncio.get_running_loop().create_future() for _ in range(N)]
 
-        fitness = await evaluate_fitness(position)
+    loop = asyncio.get_event_loop()  # Have a new event loop
 
-        particle = Particle(position, velocity, fitness)
-        swarm.append(particle)
+    print("process initial fitness")
+    looper = asyncio.gather(*[await internal_initialize_swarm(i) for i in range(N)])  # Run the loop
 
-    return swarm
+    return loop.run_until_complete(looper)
+
+@background
+async def internal_update_particle(particle, best_pos_swarm, w, experiment_id):
+    # Update velocity for each road to close
+    for r in range(num_roads):
+        r1, r2 = random.random(), random.random()
+        particle.velocity[r] = (
+                w * particle.velocity[r] +
+                r1 * c1 * (1 if particle.bestPos[r] == particle.position[r] else -1) +
+                r2 * c2 * (1 if best_pos_swarm[r] == particle.position[r] else -1)
+        )
+
+    # Update position for each road to close
+    for r in range(num_roads):
+        if particle.velocity[r] > 0:
+            particle.position[r] = particle.position[r]
+        else:
+            particle.position[r] = not particle.position[r]
+        if r in ROAD_CANT_CLOSE:
+            particle.position[r] = False
+
+    # Evaluate fitness (in this case, the air quality index) of the new position
+    fitness = await evaluate_fitness(particle.position, experiment_id)
+
+    # Update personal best
+    if fitness < particle.bestFitness:
+        particle.bestFitness = fitness
+        particle.bestPos = particle.position
+
+    return particle, fitness
 
 
-async def pso_optimization(max_iter, N, num_roads, w_start, w_end, c1, c2):
+async def pso_optimization():
+
     swarm = await initialize_swarm(N)
 
     fitness_list = [p.bestFitness for p in swarm]
@@ -145,51 +202,29 @@ async def pso_optimization(max_iter, N, num_roads, w_start, w_end, c1, c2):
 
         w = w_start - (w_start - w_end) * (iteration / max_iter)
 
-        for particle in swarm:
+        loop = asyncio.get_event_loop()  # Have a new event loop
 
-            # Update velocity for each road to close
-            for r in range(num_roads):
-                r1, r2 = random.random(), random.random()
-                particle.velocity[r] = (
-                    w * particle.velocity[r] +
-                    r1 * c1 * (1 if particle.bestPos[r] == particle.position[r] else -1) +
-                    r2 * c2 * (1 if best_pos_swarm[r] == particle.position[r] else -1)
-                )
-    
-            # Update position for each road to close
-            for r in range(num_roads):
-                if particle.velocity[r] > 0:
-                    particle.position[r] = particle.position[r]
-                else:
-                    particle.position[r] = not particle.position[r]
-                if r in ROAD_CANT_CLOSE:
-                    particle.position[r] = False
-            
-            # Evaluate fitness (in this case, the air quality index) of the new position
-            fitness = await evaluate_fitness(particle.position)
+        print("process initial fitness")
+        looper = asyncio.gather(*[await internal_update_particle(particle, best_pos_swarm, w, experiment_ids[i]) for i, particle in enumerate(swarm)])  # Run the loop
 
-            # Update personal best
-            if fitness < particle.bestFitness:
-                particle.bestFitness = fitness
-                particle.bestPos = particle.position
+        particle_fitness_list = loop.run_until_complete(looper)
 
+        print("whole swarm summary")
+        for particle, fitness in particle_fitness_list:
+            print(particle.description(), fitness)
             # Update global best
             if fitness < best_fitness_swarm:
                 best_fitness_swarm = fitness
                 best_pos_swarm = particle.position
-
-        print("whole swarm summary")
-        for p in swarm:
-            print(p.position, p.bestFitness)
-        print("current best fitness:", best_fitness_swarm, ",closed roads:", best_pos_swarm)
+        print("current best fitness:", best_fitness_swarm, ",closed roads:", [i for i, v in best_pos_swarm if v])
 
     # Return best particle of the swarm
     best_particle = min(swarm, key=lambda particle: particle.bestFitness)
     return best_particle
 
 
-async def evaluate_fitness(position):
-    global expression_future, step_future, reload_future
+async def evaluate_fitness(position, experiment_id):
+    global expression_futures, step_futures, reload_futures
 
     id = str(uuid.uuid1())
 
@@ -199,9 +234,9 @@ async def evaluate_fitness(position):
     print("NEW_ROADS_SET =", new_params)
     
     # Load the GAMA model with the new parameters
-    reload_future = asyncio.get_running_loop().create_future()
+    reload_futures[experiment_id] = asyncio.get_running_loop().create_future()
     await client.reload(experiment_id, new_params)
-    res_reload = await reload_future
+    res_reload = await reload_futures[experiment_id]
     if res_reload["type"] != MessageTypes.CommandExecutedSuccessfully.value:
         print("Unable to reload the simulation", res_reload)
         return
@@ -227,9 +262,9 @@ async def evaluate_fitness(position):
 
 # Experiment and Gama-server constants
 MY_SERVER_URL = "localhost"
-MY_SERVER_PORT = 6868
+MY_SERVER_PORT = 6869
 GAML_FILE_PATH_ON_SERVER = str(Path(__file__).parents[1] / "Hoan Kiem Air Model" / "models" / "HKAM.gaml" ).replace('\\','/')
-EXPERIMENT_NAME = "exp"
+EXPERIMENT_NAME = "parallel"
 
 
 max_iter = 1000
@@ -242,40 +277,27 @@ w_end = 0.2    # Ending inertia weight
 
 
 async def main():
-    
-    global experiment_future
-    global client
-    global experiment_id
 
-    # Initial parameter
-    MY_EXP_INIT_PARAMETERS = [{"type": "list<int>", "name": "Closed roads", "value": PhoDiBo_2023},
-                              {"type": "string", "name": "Id", "value": "initial simulation"}]
+    global client
+    global experiment_ids
+
+    experiment_ids = [""] * N
 
     # Connect to the GAMA server
     client = GamaBaseClient(MY_SERVER_URL, MY_SERVER_PORT, message_handler)
     await client.connect(ping_interval = None)
 
     # Load the model
-    print("initialize a gaml model")
-    experiment_future = asyncio.get_running_loop().create_future()
-    await client.load(GAML_FILE_PATH_ON_SERVER, EXPERIMENT_NAME, False, False, False, True, MY_EXP_INIT_PARAMETERS)
-    gama_response = await experiment_future
+    print("initialize all gaml models")
 
-    # Get experiment id of the GAMA simulation in the model
-    try:
-        experiment_id = gama_response["content"]
-    except Exception as e:
-        print("error while initializing", gama_response, e)
-        return
-    
     # Start the timer
     start_time = time.time()
 
-    best_particle = await pso_optimization(max_iter, N, num_roads, w_start, w_end, c1, c2)
+    best_particle = await pso_optimization()
     print("Best position:", best_particle.bestPos)
     print("Best fitness (air quality index):", best_particle.bestFitness)
 
-    await kill_GAMA_simulation(client, experiment_id)
+    #await kill_GAMA_simulation(client, experiment_id)
     
     # End the timer
     end_time = time.time()
