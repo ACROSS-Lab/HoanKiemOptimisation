@@ -275,7 +275,7 @@ GAML_FILE_PATH_ON_SERVER = str(Path(__file__).parents[1] / "Hoan Kiem Air Model"
 EXPERIMENT_NAME = "parallel"
 
 
-max_iter = 100
+max_iter = 250
 N = 7
 num_roads = 643
 c1 = 2
@@ -302,7 +302,7 @@ async def main():
     start_time = time.time()
 
     best_particle = await pso_optimization()
-    print("Best position:", best_particle.bestPos)
+    print("Best position:", best_particle.description())
     print("Best fitness (air quality index):", best_particle.bestFitness)
 
     #await kill_GAMA_simulation(client, experiment_id)
